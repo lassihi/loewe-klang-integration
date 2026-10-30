@@ -478,3 +478,60 @@ async def test_playfi_frame_without_metadata_is_ignored_briefly(
         FakePlayFiListener.instance.push(PlayFiState(ip_address=HOST, pstate=2))
         await hass.async_block_till_done()
         assert hass.states.get(ENTITY_ID).state == STATE_IDLE
+
+
+async def test_other_playfi_service_shown(hass: HomeAssistant, setup) -> None:
+    """A service we have no special handling for still shows its metadata."""
+    FakePlayFiListener.instance.push(
+        PlayFiState(
+            ip_address=HOST,
+            source="tidal_media",
+            pstate=playfi.PSTATE_PLAYING,
+            artist="Test Artist",
+            track="Test Track",
+            image_url="https://example.com/cover.jpg",
+            controls={"PLAY_PAUSE": True, "NEXT": False},
+            metadata_reported=True,
+        )
+    )
+    await hass.async_block_till_done()
+    state = hass.states.get(ENTITY_ID)
+    assert state.state == STATE_PLAYING
+    assert state.attributes[ATTR_INPUT_SOURCE] == "Tidal"
+    assert state.attributes["app_name"] == "Tidal"
+    assert state.attributes[ATTR_MEDIA_TITLE] == "Test Track"
+    features = state.attributes["supported_features"]
+    assert features & MediaPlayerEntityFeature.PAUSE
+    # Unverified source: only controls the speaker marks enabled.
+    assert not features & MediaPlayerEntityFeature.NEXT_TRACK
+    assert not features & MediaPlayerEntityFeature.PREVIOUS_TRACK
+
+
+async def test_radio_station_as_title(hass: HomeAssistant, setup) -> None:
+    FakePlayFiListener.instance.push(
+        PlayFiState(
+            ip_address=HOST,
+            source="tunein_media",
+            pstate=playfi.PSTATE_PLAYING,
+            station="Test Radio",
+            metadata_reported=True,
+        )
+    )
+    await hass.async_block_till_done()
+    state = hass.states.get(ENTITY_ID)
+    assert state.attributes[ATTR_MEDIA_TITLE] == "Test Radio"
+    assert state.attributes[ATTR_INPUT_SOURCE] == "TuneIn"
+
+
+async def test_lingering_playfi_source_ignored(hass: HomeAssistant, setup) -> None:
+    """A service name left over after playback, with no track, is not shown."""
+    FakePlayFiListener.instance.push(
+        PlayFiState(
+            ip_address=HOST,
+            source="tidal_media",
+            pstate=playfi.PSTATE_PAUSED,
+            metadata_reported=True,
+        )
+    )
+    await hass.async_block_till_done()
+    assert hass.states.get(ENTITY_ID).state == STATE_IDLE

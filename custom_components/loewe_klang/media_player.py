@@ -226,25 +226,32 @@ class LoeweMediaPlayer(CoordinatorEntity[LoeweCoordinator], MediaPlayerEntity):
         """Play-Fi now-playing for a session the speaker runs itself.
 
         The speaker broadcasts the metadata and transport state of AirPlay and
-        Spotify Connect sessions over Play-Fi. This returns that state while
-        such a session is the active one: AirPlay while a sender holds a
-        session, Spotify Connect when no Home Assistant Spotify entity is
-        reporting this speaker. None otherwise.
+        Spotify Connect sessions, and of other services it streams, over
+        Play-Fi. This returns that state while such a session is the active
+        one: AirPlay while a sender holds a session, others when no Cast, UPnP,
+        AirPlay or Home Assistant Spotify session is active. None otherwise.
         """
         state = self.coordinator.data.playfi
         if state is None:
             return None
         if state.source == PLAYFI_AIRPLAY:
             return state if self._airplay_active else None
+        if (
+            self._spotify is not None
+            or self._airplay_active
+            or self._cast_active
+            or self.coordinator.data.upnp.transport_state in UPNP_STATES
+        ):
+            return None
         # Spotify Connect is a backup for when Home Assistant's Spotify
         # integration is not set up: that one also has progress and seek, so
-        # it takes priority.
-        if (
-            state.source == PLAYFI_SPOTIFY
-            and self._spotify is None
-            and not self._cast_active
-            and self.coordinator.data.upnp.transport_state not in UPNP_STATES
-        ):
+        # it takes priority (checked above).
+        if state.source == PLAYFI_SPOTIFY:
+            return state
+        # Any other service the speaker plays (Tidal, Qobuz, radio, ...). Its
+        # name may linger after playback ends, so require it to report a track
+        # or to be playing.
+        if playfi.source_name(state.source) and (state.has_metadata or state.playing):
             return state
         return None
 
@@ -280,14 +287,17 @@ class LoeweMediaPlayer(CoordinatorEntity[LoeweCoordinator], MediaPlayerEntity):
         if (pf := self._playfi) is not None:
             # The speaker accepts play/pause/skip for its own sessions over
             # Play-Fi; expose what its transport controls advertise.
-            features = (
-                SESSION_FEATURES
-                | MediaPlayerEntityFeature.PLAY
-                | MediaPlayerEntityFeature.PAUSE
-            )
-            if pf.controls.get("NEXT", True):
+            # Verified sources keep the controls unless the speaker disables
+            # them; other services get only what the speaker marks enabled.
+            verified = pf.source in PLAYFI_SOURCE_NAMES
+            features = SESSION_FEATURES
+            if pf.controls.get("PLAY_PAUSE", verified):
+                features |= (
+                    MediaPlayerEntityFeature.PLAY | MediaPlayerEntityFeature.PAUSE
+                )
+            if pf.controls.get("NEXT", verified):
                 features |= MediaPlayerEntityFeature.NEXT_TRACK
-            if pf.controls.get("PREVIOUS", True):
+            if pf.controls.get("PREVIOUS", verified):
                 features |= MediaPlayerEntityFeature.PREVIOUS_TRACK
             return features
         if self._airplay_active:
@@ -355,7 +365,7 @@ class LoeweMediaPlayer(CoordinatorEntity[LoeweCoordinator], MediaPlayerEntity):
         if self._spotify is not None:
             return "Spotify Connect"
         if (pf := self._playfi) is not None:
-            return PLAYFI_SOURCE_NAMES[pf.source]
+            return playfi.source_name(pf.source)
         if self._airplay_active:
             return "AirPlay"
         if self.state == MediaPlayerState.IDLE:
@@ -365,8 +375,8 @@ class LoeweMediaPlayer(CoordinatorEntity[LoeweCoordinator], MediaPlayerEntity):
 
     @property
     def app_name(self) -> str | None:
-        if (pf := self._playfi) is not None and pf.source == PLAYFI_SPOTIFY:
-            return "Spotify"
+        if (pf := self._playfi) is not None and pf.source != PLAYFI_AIRPLAY:
+            return "Spotify" if pf.source == PLAYFI_SPOTIFY else self.source
         if self._airplay_active:
             return "AirPlay"
         return self.coordinator.data.cast.app_name if self._cast_active else None
@@ -387,7 +397,8 @@ class LoeweMediaPlayer(CoordinatorEntity[LoeweCoordinator], MediaPlayerEntity):
         if self._cast_active:
             return data.cast.title
         if (pf := self._playfi) is not None:
-            return pf.track
+            # Radio streams may report only the station.
+            return pf.track or pf.station
         return self._track.title
 
     @property

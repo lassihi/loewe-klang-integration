@@ -42,6 +42,42 @@ QUERY_REMOTE_VOLUMES = 56
 PLAYFI_AIRPLAY = "airplay_media"
 PLAYFI_SPOTIFY = "spotify_media"
 PLAYFI_SOURCE_NAMES = {PLAYFI_AIRPLAY: "AirPlay", PLAYFI_SPOTIFY: "Spotify Connect"}
+# ``<msource>`` values that mean the speaker is not playing anything.
+_IDLE_SOURCES = {"", "none", "idle"}
+# Spellings the generic ``foo_bar_media`` -> "Foo Bar" rule would get wrong.
+# The values come from the speaker firmware, so services not listed here still
+# get a readable name.
+_SERVICE_NAMES = {
+    "amazon": "Amazon Music",
+    "amazonmusic": "Amazon Music",
+    "aux": "Line in",
+    "linein": "Line in",
+    "line_in": "Line in",
+    "bluetooth": "Bluetooth",
+    "deezer": "Deezer",
+    "iheart": "iHeartRadio",
+    "iheartradio": "iHeartRadio",
+    "napster": "Napster",
+    "pandora": "Pandora",
+    "qobuz": "Qobuz",
+    "siriusxm": "SiriusXM",
+    "soundcloud": "SoundCloud",
+    "tidal": "Tidal",
+    "tunein": "TuneIn",
+    "usb": "USB",
+}
+
+
+def source_name(msource: str | None) -> str | None:
+    """A display name for an ``<msource>`` value, e.g. ``tidal_media`` -> Tidal."""
+    if msource is None or msource.strip().lower() in _IDLE_SOURCES:
+        return None
+    if msource in PLAYFI_SOURCE_NAMES:
+        return PLAYFI_SOURCE_NAMES[msource]
+    key = msource.strip().lower().removesuffix("_media")
+    if key in _SERVICE_NAMES:
+        return _SERVICE_NAMES[key]
+    return " ".join(part.capitalize() for part in key.split("_") if part) or None
 
 # Sentinel volume that mutes the speaker in a remote-volumes request.
 VOLUME_MUTE = 255

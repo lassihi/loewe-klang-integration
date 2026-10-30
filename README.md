@@ -16,23 +16,33 @@ same Play-Fi platform and should work, but are unverified. Reports are welcome.
 The speaker can be fed by several sources. The integration follows whichever
 one is active and shows it on a single media player:
 
-| | Google Cast | UPnP / DLNA | AirPlay | Spotify Connect |
-| --- | :---: | :---: | :---: | :---: |
-| Title and artist | ✓ | ✓ | ✓ | ✓ |
-| Album | ✓ | ✓ | ✓¹ | ✓ |
-| Cover art | ✓ | ✓ | – | ✓ |
-| Progress and duration | ✓ | ✓ | – | ✓³ |
-| Play and pause | ✓ | ✓ | ✓ | ✓ |
-| Next and previous | ✓² | ✓ | ✓ | ✓ |
-| Seek | ✓² | ✓ | – | ✓³ |
-| Stop | ✓ | ✓ | – | pauses |
-| Shuffle and repeat | – | ✓ | – | – |
-| Source shown as | `Chromecast: <app>` | `DLNA`, … | `AirPlay` | `Spotify Connect` |
-| Data comes from | Cast media status | UPnP renderer | The speaker's Play-Fi broadcast | Home Assistant's Spotify integration, or the speaker's Play-Fi broadcast |
+| | Google Cast | UPnP / DLNA | AirPlay | Spotify Connect | Other Play-Fi services⁴ |
+| --- | :---: | :---: | :---: | :---: | :---: |
+| Title and artist | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Album | ✓ | ✓ | ✓¹ | ✓ | ✓ |
+| Cover art | ✓ | ✓ | – | ✓ | ✓ |
+| Progress and duration | ✓ | ✓ | – | ✓³ | – |
+| Play and pause | ✓ | ✓ | ✓ | ✓ | ✓⁵ |
+| Next and previous | ✓² | ✓ | ✓ | ✓ | ✓⁵ |
+| Seek | ✓² | ✓ | – | ✓³ | – |
+| Stop | ✓ | ✓ | – | pauses | – |
+| Shuffle and repeat | – | ✓ | – | – | – |
+| Source shown as | `Chromecast: <app>` | `DLNA`, … | `AirPlay` | `Spotify Connect` | Service name, e.g. `Tidal` |
+| Data comes from | Cast media status | UPnP renderer | The speaker's Play-Fi broadcast | Home Assistant's Spotify integration, or the speaker's Play-Fi broadcast | The speaker's Play-Fi broadcast |
 
 ¹ Shown when the AirPlay sender provides it.
+
 ² When the Cast app allows it.
-³ Only with Home Assistant's Spotify integration set up. The Play-Fi broadcast has no position.
+
+³ Only with Home Assistant's Spotify integration set up. The Play-Fi broadcast
+has no position.
+
+⁴ Services started from the Play-Fi app, such as Tidal, Qobuz, Deezer or
+internet radio. They are handled generically from the same broadcast and have
+not been tested, because they need subscriptions. Radio streams that report
+only a station show the station as the title.
+
+⁵ Only the controls the speaker marks as available for that service.
 
 Volume and mute work the same for every source: they use the Cast receiver's
 master volume, with UPnP as fallback. See [AirPlay](#airplay) and
@@ -165,10 +175,10 @@ Cast and UPnP sessions on the speaker take priority over both.
 
 ## Limitations
 
-- **Play-Fi app sessions.** The integration reads the speaker's Play-Fi
-  broadcast, but so far only AirPlay and Spotify Connect sessions are mapped
-  to now-playing and control. Other sources, such as streams started from the
-  Play-Fi app itself, have not been verified.
+- **Other Play-Fi services.** Streams started from the Play-Fi app (Tidal,
+  Qobuz, radio and so on) are shown from the speaker's broadcast using a
+  generic rule, but none has been tested yet, because they need
+  subscriptions.
   If one shows nothing, download the diagnostics while it plays (the `playfi`
   block shows what the speaker reports) and open an issue.
 - **Grouping and zones**, **input switching**, **presets** and **EQ** are

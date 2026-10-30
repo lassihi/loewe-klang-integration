@@ -118,3 +118,14 @@ def test_resolve_image_url() -> None:
         playfi.resolve_image_url("https://cdn.example/a.jpg", host, 8081)
         == "https://cdn.example/a.jpg"
     )
+
+
+def test_source_name() -> None:
+    assert playfi.source_name("airplay_media") == "AirPlay"
+    assert playfi.source_name("spotify_media") == "Spotify Connect"
+    assert playfi.source_name("tidal_media") == "Tidal"
+    assert playfi.source_name("iheartradio_media") == "iHeartRadio"
+    assert playfi.source_name("some_new_service_media") == "Some New Service"
+    assert playfi.source_name("none") is None
+    assert playfi.source_name("") is None
+    assert playfi.source_name(None) is None

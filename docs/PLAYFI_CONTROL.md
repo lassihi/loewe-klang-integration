@@ -50,9 +50,11 @@ seconds, unprompted. Decrypting it yields:
 
 The integration binds UDP `10102`, keeps the announces whose IP matches the
 speaker, and surfaces the metadata and transport state for the speaker's own
-sessions: AirPlay (`airplay_media`) and Spotify Connect (`spotify_media`). For
-Spotify Connect, `<imageurl>` is the Spotify CDN cover. This is read-only and
-never interrupts playback.
+sessions: AirPlay (`airplay_media`) and Spotify Connect (`spotify_media`), both
+verified, and any other service the speaker announces, handled generically
+(the display name is derived from the `msource` value, e.g. `tidal_media` →
+Tidal). For Spotify Connect, `<imageurl>` is the Spotify CDN cover. This is
+read-only and never interrupts playback.
 
 Now and then the speaker sends a status frame without the `<metadata>` block,
 mostly around source changes. The integration keeps the last full state
