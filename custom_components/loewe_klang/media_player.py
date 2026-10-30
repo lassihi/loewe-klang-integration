@@ -450,6 +450,15 @@ class LoeweMediaPlayer(CoordinatorEntity[LoeweCoordinator], MediaPlayerEntity):
         # Cover art often lives on the speaker's LAN address; let HA proxy it.
         return False
 
+    async def async_get_media_image(self) -> tuple[bytes | None, str | None]:
+        # Only the Spotify entity's URL is trusted; every other source's URL
+        # can be set by anything on the LAN, so it goes through the guarded fetch.
+        if self._spotify is not None:
+            return await super().async_get_media_image()
+        if (url := self.media_image_url) is None:
+            return None, None
+        return await self._rt.speaker.async_get_image(url) or (None, None)
+
     @property
     def media_duration(self) -> int | None:
         data = self.coordinator.data

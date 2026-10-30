@@ -48,8 +48,9 @@ seconds, unprompted. Decrypting it yields:
 </event></phoruslink></api>
 ```
 
-The integration binds UDP `10102`, keeps the announces whose IP matches the
-speaker, and surfaces the metadata and transport state for the speaker's own
+The integration binds UDP `10102`, keeps the datagrams sent from the speaker's
+address (checked before decrypting, since anything on the LAN can send to this
+port), and surfaces the metadata and transport state for the speaker's own
 sessions: AirPlay (`airplay_media`) and Spotify Connect (`spotify_media`), both
 verified, and any other service the speaker announces, handled generically
 (the display name is derived from the `msource` value, e.g. `tidal_media` →
@@ -86,7 +87,8 @@ internal volume.
   leaves it empty (verified with several senders, including Spotify via
   AirPlay), so no AirPlay artwork is shown. When a source does populate it, a
   relative path is resolved against the speaker's HTTP server on port `8081`
-  and Home Assistant proxies the image.
+  and Home Assistant proxies the image. The proxy only fetches images from the
+  speaker itself or a public address, because the URL is unauthenticated.
 - The mutual-TLS XML channel on port 10109 that an earlier draft targeted is a
   separate, legacy control path the app does not use; pairing on it interrupts
   the active source. It is intentionally avoided.

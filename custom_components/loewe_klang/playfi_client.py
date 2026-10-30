@@ -11,7 +11,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import socket
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 
 from . import playfi
 from .const import (
@@ -24,24 +24,27 @@ _LOGGER = logging.getLogger(__name__)
 
 # The speaker answers a command quickly; don't hang a service call on it.
 _COMMAND_TIMEOUT = 4.0
+# Real announces are around 2 KB; anything far larger is not from a speaker.
+_MAX_DATAGRAM_SIZE = 8192
 
 
 class PlayFiListener(asyncio.DatagramProtocol):
     """Receives a speaker's announce broadcasts and decodes now-playing.
 
     The speaker broadcasts to the LAN, so every listener on the host sees every
-    speaker; each instance keeps only the announces whose device id (or IP)
-    matches its own speaker.
+    speaker, and anything on the LAN can send to this port. Each instance keeps
+    only the announces sent from its own speaker's address, and checks that
+    before decrypting so that junk traffic can't tie up the event loop.
     """
 
     def __init__(
         self,
-        host: str,
+        source_ips: Collection[str],
         on_state: Callable[[playfi.PlayFiState], None],
         *,
         device_id: str | None = None,
     ) -> None:
-        self._host = host
+        self._source_ips = source_ips
         self._on_state = on_state
         self._device_id = device_id.lower() if device_id else None
         self._transport: asyncio.DatagramTransport | None = None
@@ -50,21 +53,23 @@ class PlayFiListener(asyncio.DatagramProtocol):
         self._transport = transport  # type: ignore[assignment]
 
     def datagram_received(self, data: bytes, addr: tuple[str, int]) -> None:
+        if addr[0] not in self._source_ips or len(data) > _MAX_DATAGRAM_SIZE:
+            return
         xml = playfi.decode(data, PLAYFI_BLOWFISH_KEY)
         if xml is None:
             return
         state = playfi.parse_announce(xml)
-        if state is None or not self._matches(state, addr[0]):
+        if state is None or not self._matches(state):
             return
         try:
             self._on_state(state)
         except Exception:
             _LOGGER.exception("Play-Fi state callback failed")
 
-    def _matches(self, state: playfi.PlayFiState, src_ip: str) -> bool:
+    def _matches(self, state: playfi.PlayFiState) -> bool:
         if self._device_id and state.device_id:
             return state.device_id.lower() == self._device_id
-        return src_ip == self._host or state.ip_address == self._host
+        return True
 
     def close(self) -> None:
         if self._transport is not None:
@@ -80,6 +85,11 @@ async def async_create_listener(
 ) -> PlayFiListener:
     """Bind the broadcast port and start listening for one speaker."""
     loop = asyncio.get_running_loop()
+    # The host may be a hostname, but datagrams are matched by source address.
+    infos = await loop.getaddrinfo(
+        host, PLAYFI_BROADCAST_PORT, family=socket.AF_INET, type=socket.SOCK_DGRAM
+    )
+    source_ips = {info[4][0] for info in infos}
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     # Allow one listener per speaker (and co-existence with the app) on the host.
@@ -90,7 +100,7 @@ async def async_create_listener(
             _LOGGER.debug("SO_REUSEPORT unavailable", exc_info=True)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
     sock.bind(("", PLAYFI_BROADCAST_PORT))
-    listener = PlayFiListener(host, on_state, device_id=device_id)
+    listener = PlayFiListener(source_ips, on_state, device_id=device_id)
     await loop.create_datagram_endpoint(lambda: listener, sock=sock)
     return listener
 

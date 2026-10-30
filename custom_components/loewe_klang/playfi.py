@@ -19,6 +19,7 @@ I/O lives in :mod:`.playfi_client`. See ``docs/PLAYFI_CONTROL.md``.
 
 from __future__ import annotations
 
+import functools
 import struct
 from dataclasses import dataclass, field
 from xml.etree import ElementTree as ET
@@ -292,7 +293,9 @@ class _Blowfish:
         return bytes(out)
 
 
+@functools.lru_cache(maxsize=1)
 def _cipher(key: bytes) -> _Blowfish:
+    # The key schedule costs milliseconds in pure Python and the key never changes.
     return _Blowfish(key)
 
 

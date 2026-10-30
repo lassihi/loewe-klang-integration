@@ -1,10 +1,15 @@
 """Tests for the UPnP client against recorded speaker responses."""
 
+import socket
+from unittest.mock import AsyncMock, patch
+
 import pytest
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from pytest_homeassistant_custom_component.test_util.aiohttp import AiohttpClientMocker
 
 from custom_components.loewe_klang.upnp import (
+    IMAGE_MAX_REDIRECTS,
     LoeweError,
     LoeweSpeaker,
     build_didl,
@@ -66,6 +71,106 @@ async def test_device_info(hass: HomeAssistant, speaker) -> None:
     assert info.model == "MR3_GC"
     assert info.firmware == "50871009"
     assert info.manufacturer == "Loewe"
+
+
+PUBLIC_IMAGE = "http://8.8.8.8/cover.jpg"
+
+
+async def test_image_from_speaker(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
+) -> None:
+    url = f"http://{HOST}:8081/images/a.jpg"
+    aioclient_mock.get(
+        url, content=b"jpeg", headers={"Content-Type": "image/jpeg; charset=x"}
+    )
+    client = LoeweSpeaker(HOST, async_get_clientsession(hass))
+    assert await client.async_get_image(url) == (b"jpeg", "image/jpeg")
+
+
+async def test_image_from_public_host(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
+) -> None:
+    aioclient_mock.get(
+        PUBLIC_IMAGE, content=b"jpeg", headers={"Content-Type": "image/jpeg"}
+    )
+    client = LoeweSpeaker(HOST, async_get_clientsession(hass))
+    assert await client.async_get_image(PUBLIC_IMAGE) == (b"jpeg", "image/jpeg")
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://127.0.0.1:8123/api/config",
+        "http://169.254.169.254/latest/meta-data/",
+        "http://192.168.1.1/",
+        "http://10.0.0.1/",
+        "http://[::1]/",
+        "http://[::ffff:127.0.0.1]/",
+        "http://224.0.0.1/",
+        "file:///etc/passwd",
+        "/relative.jpg",
+    ],
+)
+async def test_image_refuses_internal_targets(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker, url: str
+) -> None:
+    client = LoeweSpeaker(HOST, async_get_clientsession(hass))
+    assert await client.async_get_image(url) is None
+    assert aioclient_mock.call_count == 0
+
+
+async def test_image_refuses_name_resolving_inside(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
+) -> None:
+    infos = [
+        (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("8.8.8.8", 80)),
+        (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("192.168.1.1", 80)),
+    ]
+    client = LoeweSpeaker(HOST, async_get_clientsession(hass))
+    with patch.object(hass.loop, "getaddrinfo", AsyncMock(return_value=infos)):
+        assert await client.async_get_image("http://nas.example/a.jpg") is None
+    assert aioclient_mock.call_count == 0
+
+
+async def test_image_refuses_redirect_to_internal(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
+) -> None:
+    aioclient_mock.get(
+        PUBLIC_IMAGE, status=302, headers={"Location": "http://127.0.0.1/secret"}
+    )
+    client = LoeweSpeaker(HOST, async_get_clientsession(hass))
+    assert await client.async_get_image(PUBLIC_IMAGE) is None
+    assert aioclient_mock.call_count == 1
+
+
+async def test_image_follows_public_redirect(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
+) -> None:
+    aioclient_mock.get(PUBLIC_IMAGE, status=302, headers={"Location": "/moved.jpg"})
+    aioclient_mock.get(
+        "http://8.8.8.8/moved.jpg", content=b"jpeg", headers={"Content-Type": "image/png"}
+    )
+    client = LoeweSpeaker(HOST, async_get_clientsession(hass))
+    assert await client.async_get_image(PUBLIC_IMAGE) == (b"jpeg", "image/png")
+
+
+async def test_image_stops_redirect_loop(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
+) -> None:
+    aioclient_mock.get(PUBLIC_IMAGE, status=302, headers={"Location": PUBLIC_IMAGE})
+    client = LoeweSpeaker(HOST, async_get_clientsession(hass))
+    assert await client.async_get_image(PUBLIC_IMAGE) is None
+    assert aioclient_mock.call_count == IMAGE_MAX_REDIRECTS + 1
+
+
+async def test_image_refuses_non_image_response(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
+) -> None:
+    aioclient_mock.get(
+        PUBLIC_IMAGE, text="<html>", headers={"Content-Type": "text/html"}
+    )
+    client = LoeweSpeaker(HOST, async_get_clientsession(hass))
+    assert await client.async_get_image(PUBLIC_IMAGE) is None
 
 
 async def test_fault_raises(hass: HomeAssistant, speaker) -> None:

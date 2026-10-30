@@ -6,8 +6,11 @@ off the wire, so the cipher and framing are pinned to real device behaviour.
 values.
 """
 
+from unittest.mock import patch
+
 from custom_components.loewe_klang import playfi
 from custom_components.loewe_klang.const import PLAYFI_BLOWFISH_KEY as KEY
+from custom_components.loewe_klang.playfi_client import PlayFiListener
 
 # A speaker announce broadcast with the structure of a real klang mr3 frame
 # (AirPlay session, paused). Every identifying value (MAC, addresses, serial,
@@ -118,6 +121,40 @@ def test_resolve_image_url() -> None:
         playfi.resolve_image_url("https://cdn.example/a.jpg", host, 8081)
         == "https://cdn.example/a.jpg"
     )
+
+
+SPEAKER_IP = "192.0.2.10"
+
+
+def _listener() -> tuple[PlayFiListener, list[playfi.PlayFiState]]:
+    states: list[playfi.PlayFiState] = []
+    return PlayFiListener({SPEAKER_IP}, states.append), states
+
+
+def test_listener_accepts_announce_from_speaker() -> None:
+    listener, states = _listener()
+    listener.datagram_received(ANNOUNCE, (SPEAKER_IP, 10102))
+    assert [s.track for s in states] == ["Test Track"]
+
+
+def test_listener_ignores_other_source_claiming_speaker_ip() -> None:
+    # The frame's <ipaddress> says 192.0.2.10, but that is attacker-controlled.
+    listener, states = _listener()
+    listener.datagram_received(ANNOUNCE, ("192.0.2.66", 10102))
+    assert states == []
+
+
+def test_listener_does_not_decrypt_foreign_or_oversized_datagrams() -> None:
+    listener, states = _listener()
+    with patch.object(playfi, "decode") as decode:
+        listener.datagram_received(b"A" * 8, ("192.0.2.66", 10102))
+        listener.datagram_received(b"A" * 8200, (SPEAKER_IP, 10102))
+    decode.assert_not_called()
+    assert states == []
+
+
+def test_cipher_is_reused() -> None:
+    assert playfi._cipher(KEY) is playfi._cipher(KEY)
 
 
 def test_source_name() -> None:

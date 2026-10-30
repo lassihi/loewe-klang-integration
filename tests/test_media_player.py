@@ -409,6 +409,37 @@ def _playfi_spotify(pstate: int = playfi.PSTATE_PLAYING) -> PlayFiState:
     )
 
 
+@pytest.mark.parametrize(
+    ("image_url", "expected"),
+    [
+        ("/images/a.jpg", (b"jpeg", "image/jpeg")),
+        ("http://169.254.169.254/latest/meta-data/", (None, None)),
+        ("http://127.0.0.1:8123/api/config", (None, None)),
+        (None, (None, None)),
+    ],
+)
+async def test_cover_art_proxy_is_guarded(
+    hass: HomeAssistant,
+    setup,
+    aioclient_mock,
+    image_url: str | None,
+    expected: tuple[bytes | None, str | None],
+) -> None:
+    """A URL from an announce can't make the server fetch internal addresses."""
+    aioclient_mock.get(
+        f"http://{HOST}:8081/images/a.jpg",
+        content=b"jpeg",
+        headers={"Content-Type": "image/jpeg"},
+    )
+    state = _playfi_spotify()
+    state.image_url = image_url
+    FakePlayFiListener.instance.push(state)
+    await hass.async_block_till_done()
+
+    entity = hass.data["media_player"].get_entity(ENTITY_ID)
+    assert await entity.async_get_media_image() == expected
+
+
 async def test_spotify_connect_via_playfi(hass: HomeAssistant, setup) -> None:
     """Without the Spotify integration, Spotify Connect comes from Play-Fi."""
     FakePlayFiListener.instance.push(_playfi_spotify())

@@ -9,16 +9,19 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import ipaddress
 import json
 import logging
 import plistlib
 import re
+import socket
 from dataclasses import dataclass, field
 from typing import Any
 from xml.etree import ElementTree as ET
 from xml.sax.saxutils import escape
 
 import aiohttp
+from yarl import URL
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -28,6 +31,8 @@ AIRPLAY_PORT = 7000
 # AirPlay statusFlags bit set while a sender holds a session (playing or paused).
 AIRPLAY_SESSION_ACTIVE = 0x800
 TIMEOUT = aiohttp.ClientTimeout(total=6)
+IMAGE_MAX_REDIRECTS = 3
+_REDIRECT_STATUSES = {301, 302, 303, 307, 308}
 
 AVT = "AVTransport"
 RC = "RenderingControl"
@@ -168,6 +173,12 @@ def parse_didl(didl: str | None) -> TrackInfo:
     if info.title in ("", "Unknown"):
         info.title = None
     return info
+
+
+def _is_public_ip(address: str) -> bool:
+    ip = ipaddress.ip_address(address)
+    ip = getattr(ip, "ipv4_mapped", None) or ip
+    return ip.is_global and not ip.is_multicast
 
 
 def build_didl(url: str, title: str, mime: str) -> str:
@@ -371,6 +382,47 @@ class LoeweSpeaker:
                 return await resp.read()
         except (aiohttp.ClientError, TimeoutError):
             return None
+
+    async def _image_url_allowed(self, url: URL) -> bool:
+        """Only the speaker itself and public addresses may serve cover art."""
+        if url.scheme not in ("http", "https") or not url.host:
+            return False
+        if url.host == self.host:
+            return True
+        try:
+            infos = await asyncio.get_running_loop().getaddrinfo(
+                url.host, url.port, type=socket.SOCK_STREAM
+            )
+            return bool(infos) and all(_is_public_ip(info[4][0]) for info in infos)
+        except (OSError, ValueError):
+            return False
+
+    async def async_get_image(self, url: str) -> tuple[bytes, str] | None:
+        """Fetch cover art whose URL came from unauthenticated LAN traffic.
+
+        Announces, DLNA metadata and Cast status can all name any URL, and
+        Home Assistant's own image fetch would request it from the server with
+        no checks. Redirects are followed by hand so each hop is checked too.
+        """
+        try:
+            target = URL(url)
+            for _ in range(IMAGE_MAX_REDIRECTS + 1):
+                if not await self._image_url_allowed(target):
+                    _LOGGER.debug("Refusing cover art from %s", target.host)
+                    return None
+                async with self._session.get(
+                    target, timeout=TIMEOUT, allow_redirects=False
+                ) as resp:
+                    if resp.status in _REDIRECT_STATUSES:
+                        target = target.join(URL(resp.headers.get("Location", "")))
+                        continue
+                    mime = resp.headers.get("Content-Type", "").split(";")[0].strip()
+                    if resp.status != 200 or not mime.lower().startswith("image/"):
+                        return None
+                    return await resp.read(), mime
+        except (aiohttp.ClientError, TimeoutError, ValueError):
+            return None
+        return None
 
     async def async_get_device_info(self) -> DeviceInfo:
         """Read name/UDN from UPnP plus extra identity from Cast and AirPlay."""
