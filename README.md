@@ -4,7 +4,7 @@ A custom Home Assistant integration for the **Loewe klang** series of DTS
 Play-Fi speakers. It shows what is currently playing and lets you control the
 speaker from Home Assistant, much like the Play-Fi app.
 
-This integration works with **any source** where as existing integrations (CAST, DLNA) only support their own protocol.
+This integration works with **any source** whereas the existing integrations (Cast, DLNA) only support their own protocol.
 
 So far it has only been tested on the **klang mr3**. Other klang models use the
 same Play-Fi platform and should work, but are unverified. Reports are welcome.
