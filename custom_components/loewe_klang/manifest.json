@@ -1,0 +1,25 @@
+{
+  "domain": "loewe_klang",
+  "name": "Loewe klang (DTS Play-Fi)",
+  "after_dependencies": [
+    "media_source",
+    "zeroconf"
+  ],
+  "codeowners": [],
+  "config_flow": true,
+  "integration_type": "device",
+  "iot_class": "local_polling",
+  "loggers": [
+    "pychromecast"
+  ],
+  "requirements": [
+    "PyChromecast>=14.0.0"
+  ],
+  "ssdp": [
+    {
+      "manufacturer": "Phorus",
+      "deviceType": "urn:schemas-upnp-org:device:MediaRenderer:1"
+    }
+  ],
+  "version": "0.4.2"
+}

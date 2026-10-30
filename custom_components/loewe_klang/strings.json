@@ -1,0 +1,54 @@
+{
+  "config": {
+    "flow_title": "{name}",
+    "step": {
+      "user": {
+        "title": "Loewe klang speaker",
+        "description": "Enter the IP address or hostname of your Loewe klang (DTS Play-Fi) speaker.",
+        "data": {
+          "host": "Host"
+        }
+      },
+      "confirm": {
+        "description": "Set up {name} at {host}?"
+      }
+    },
+    "error": {
+      "cannot_connect": "Could not reach a Play-Fi speaker at that address."
+    },
+    "abort": {
+      "already_configured": "This speaker is already configured.",
+      "cannot_connect": "Could not reach the speaker.",
+      "not_loewe": "The discovered device is not a supported Play-Fi speaker."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "playfi_firmware": {
+        "name": "Play-Fi firmware"
+      },
+      "cast_firmware": {
+        "name": "Chromecast firmware"
+      }
+    },
+    "binary_sensor": {
+      "update_available": {
+        "name": "Firmware update available"
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Loewe klang options",
+        "description": "Spotify Connect plays on the speaker itself, so only Spotify knows the track. Any Spotify account set up in Home Assistant that is playing on this speaker is shown automatically. Pick an entity here only to limit it to one account.",
+        "data": {
+          "spotify_entity": "Spotify entity"
+        },
+        "data_description": {
+          "spotify_entity": "Leave empty to detect automatically. Requires the Spotify integration."
+        }
+      }
+    }
+  }
+}

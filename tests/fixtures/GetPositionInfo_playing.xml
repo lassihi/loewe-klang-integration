@@ -1,0 +1,12 @@
+<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"><s:Body>
+<u:GetPositionInfoResponse xmlns:u="urn:upnp-org:serviceId:AVTransport">
+<Track>1</Track>
+<TrackDuration>00:03:45</TrackDuration>
+<TrackURI>http://192.0.2.20/song.flac</TrackURI>
+<TrackMetaData>&lt;DIDL-Lite xmlns=&quot;urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/&quot; xmlns:dc=&quot;http://purl.org/dc/elements/1.1/&quot; xmlns:upnp=&quot;urn:schemas-upnp-org:metadata-1-0/upnp/&quot;&gt;&lt;item id=&quot;1&quot; parentID=&quot;0&quot; restricted=&quot;1&quot;&gt;&lt;dc:title&gt;Paranoid Android&lt;/dc:title&gt;&lt;upnp:artist&gt;Radiohead&lt;/upnp:artist&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;Radiohead&lt;/upnp:artist&gt;&lt;upnp:album&gt;OK Computer&lt;/upnp:album&gt;&lt;upnp:albumArtURI&gt;http://192.0.2.20/cover.jpg&lt;/upnp:albumArtURI&gt;&lt;upnp:class&gt;object.item.audioItem.musicTrack&lt;/upnp:class&gt;&lt;res duration=&quot;0:03:45.000&quot; protocolInfo=&quot;http-get:*:audio/flac:*&quot;&gt;http://192.0.2.20/song.flac&lt;/res&gt;&lt;/item&gt;&lt;/DIDL-Lite&gt;</TrackMetaData>
+<RelTime>00:01:10</RelTime>
+<AbsTime>00:01:10</AbsTime>
+<RelCount>2147483647</RelCount>
+<AbsCount>2147483647</AbsCount>
+</u:GetPositionInfoResponse>
+</s:Body> </s:Envelope>

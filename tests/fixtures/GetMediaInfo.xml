@@ -1,0 +1,13 @@
+<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"><s:Body>
+<u:GetMediaInfoResponse xmlns:u="urn:upnp-org:serviceId:AVTransport">
+<NrTracks>1</NrTracks>
+<MediaDuration>00:00:00</MediaDuration>
+<CurrentURI>http://192.0.2.20/previous.flac</CurrentURI>
+<CurrentURIMetaData>&lt;DIDL-Lite xmlns=&quot;urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/&quot; xmlns:dc=&quot;http://purl.org/dc/elements/1.1/&quot; xmlns:upnp=&quot;urn:schemas-upnp-org:metadata-1-0/upnp/&quot;&gt;&lt;item id=&quot;0&quot; parentID=&quot;-1&quot; restricted=&quot;1&quot;&gt;&lt;dc:title&gt;Previous track&lt;/dc:title&gt;&lt;upnp:class&gt;object.item.audioItem.musicTrack&lt;/upnp:class&gt;&lt;res protocolInfo=&quot;http-get:*:audio/flac:*&quot;&gt;http://192.0.2.20/previous.flac&lt;/res&gt;&lt;/item&gt;&lt;/DIDL-Lite&gt;</CurrentURIMetaData>
+<NextURI></NextURI>
+<NextURIMetaData></NextURIMetaData>
+<RecordMedium>NOT_IMPLEMENTED</RecordMedium>
+<WriteStatus>NOT_IMPLEMENTED</WriteStatus>
+<PlayMedium>THIRD-DLNA</PlayMedium>
+</u:GetMediaInfoResponse>
+</s:Body> </s:Envelope>

@@ -1,0 +1,17 @@
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+.coverage
+
+# Reverse-engineering scratch and vendor binaries (never commit)
+*.apk
+*.so
+*.pcap
+*.log
+
+# Extracted Play-Fi credentials and capture artifacts (never commit)
+*.pem
+capture-decrypted.txt
+ap.p
