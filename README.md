@@ -80,7 +80,8 @@ The speaker is normally discovered automatically. Confirm it under
 **Add integration → Loewe klang** and entering the speaker's IP address.
 
 Give the speaker a fixed IP address in your router if you can. If its address
-changes, SSDP rediscovery updates the entry automatically.
+changes, SSDP rediscovery updates the entry automatically once the old address
+stops answering as this speaker.
 
 The speaker also shows up in Home Assistant's built-in **Google Cast** and
 **DLNA Digital Media Renderer** integrations. You can ignore those discoveries,

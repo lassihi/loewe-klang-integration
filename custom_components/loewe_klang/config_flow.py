@@ -14,6 +14,7 @@ from homeassistant.config_entries import (
 )
 from homeassistant.const import CONF_HOST
 from homeassistant.core import callback
+from homeassistant.data_entry_flow import AbortFlow
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.selector import EntitySelector, EntitySelectorConfig
 from homeassistant.helpers.service_info.ssdp import SsdpServiceInfo
@@ -39,6 +40,34 @@ class LoeweKlangConfigFlow(ConfigFlow, domain=DOMAIN):
         return await LoeweSpeaker(
             host, async_get_clientsession(self.hass)
         ).async_get_device_info()
+
+    async def _async_answers_as(self, host: str, udn: str) -> bool:
+        try:
+            return (await self._async_probe(host)).udn == udn
+        except LoeweError:
+            return False
+
+    async def _async_abort_if_known(self, udn: str, host: str) -> None:
+        """Abort the discovery of a known speaker, following it only if it moved.
+
+        SSDP is unauthenticated and a speaker's UDN is public, so an announcement
+        alone can't repoint an entry: the configured host must have stopped
+        answering as this speaker, and the new one must answer as it.
+        """
+        entry = await self.async_set_unique_id(udn)
+        if entry is None:
+            return
+        current = entry.data.get(CONF_HOST)
+        if (
+            current
+            and current != host
+            and (
+                await self._async_answers_as(current, udn)
+                or not await self._async_answers_as(host, udn)
+            )
+        ):
+            raise AbortFlow("already_configured")
+        self._abort_if_unique_id_configured(updates={CONF_HOST: host})
 
     def _entry_data(self, device: DeviceInfo) -> dict[str, Any]:
         return {
@@ -79,14 +108,12 @@ class LoeweKlangConfigFlow(ConfigFlow, domain=DOMAIN):
             discovery_info.upnp.get("UDN") or discovery_info.ssdp_udn or ""
         ).removeprefix("uuid:")
         if udn:
-            await self.async_set_unique_id(udn)
-            self._abort_if_unique_id_configured(updates={CONF_HOST: host})
+            await self._async_abort_if_known(udn, host)
         try:
             self._device = await self._async_probe(host)
         except LoeweError:
             return self.async_abort(reason="not_loewe")
-        await self.async_set_unique_id(self._device.udn)
-        self._abort_if_unique_id_configured(updates={CONF_HOST: host})
+        await self._async_abort_if_known(self._device.udn, host)
         self.context["title_placeholders"] = {"name": self._device.name}
         return await self.async_step_confirm()
 

@@ -409,6 +409,29 @@ def _playfi_spotify(pstate: int = playfi.PSTATE_PLAYING) -> PlayFiState:
     )
 
 
+async def test_announces_do_not_restart_the_poll_timer(
+    hass: HomeAssistant, setup
+) -> None:
+    """Announces arrive faster than the poll interval and must not starve it."""
+    coordinator = setup.runtime_data.coordinator
+    timer = coordinator._unsub_refresh
+    assert timer is not None
+    FakePlayFiListener.instance.push(_playfi_spotify())
+    await hass.async_block_till_done()
+    assert coordinator._unsub_refresh is timer
+    assert hass.states.get(ENTITY_ID).attributes[ATTR_MEDIA_TITLE] == "Test Episode"
+
+
+async def test_announce_does_not_mark_speaker_reachable(
+    hass: HomeAssistant, setup
+) -> None:
+    coordinator = setup.runtime_data.coordinator
+    coordinator.last_update_success = False
+    FakePlayFiListener.instance.push(_playfi_spotify())
+    await hass.async_block_till_done()
+    assert coordinator.last_update_success is False
+
+
 @pytest.mark.parametrize(
     ("image_url", "expected"),
     [

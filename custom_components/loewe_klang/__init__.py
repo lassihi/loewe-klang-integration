@@ -26,6 +26,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: LoeweConfigEntry) -> boo
         device = await speaker.async_get_device_info()
     except LoeweError as err:
         raise ConfigEntryNotReady(str(err)) from err
+    if entry.unique_id and device.udn != entry.unique_id:
+        raise ConfigEntryNotReady(
+            f"{speaker.host} answered as {device.udn}, expected {entry.unique_id}"
+        )
 
     coordinator = LoeweCoordinator(hass, entry, speaker)
     await coordinator.async_config_entry_first_refresh()

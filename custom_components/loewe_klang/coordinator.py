@@ -133,13 +133,15 @@ class LoeweCoordinator(DataUpdateCoordinator[LoeweState]):
             return
         self._playfi = state
         if self.data is not None:
-            self.async_set_updated_data(
-                LoeweState(
-                    upnp=self.data.upnp,
-                    upnp_updated=self.data.upnp_updated,
-                    cast=self.data.cast,
-                    firmware=self.data.firmware,
-                    airplay_active=self.data.airplay_active,
-                    playfi=state,
-                )
+            # Not async_set_updated_data: it restarts the poll timer, so announces
+            # arriving faster than SCAN_INTERVAL would stop polling altogether. It
+            # would also mark the speaker reachable on a frame anyone can forge.
+            self.data = LoeweState(
+                upnp=self.data.upnp,
+                upnp_updated=self.data.upnp_updated,
+                cast=self.data.cast,
+                firmware=self.data.firmware,
+                airplay_active=self.data.airplay_active,
+                playfi=state,
             )
+            self.async_update_listeners()
