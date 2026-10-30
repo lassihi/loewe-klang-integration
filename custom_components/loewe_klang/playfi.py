@@ -38,6 +38,11 @@ TRANSPORT_PAUSE = 7
 QUERY_TRANSPORT = 31
 QUERY_REMOTE_VOLUMES = 56
 
+# ``<msource>`` values for sessions the speaker runs itself.
+PLAYFI_AIRPLAY = "airplay_media"
+PLAYFI_SPOTIFY = "spotify_media"
+PLAYFI_SOURCE_NAMES = {PLAYFI_AIRPLAY: "AirPlay", PLAYFI_SPOTIFY: "Spotify Connect"}
+
 # Sentinel volume that mutes the speaker in a remote-volumes request.
 VOLUME_MUTE = 255
 
@@ -332,6 +337,8 @@ class PlayFiState:
     volume: int | None = None
     firmware: str | None = None
     controls: dict[str, bool] = field(default_factory=dict)
+    # False for the occasional status frame that omits the <metadata> block.
+    metadata_reported: bool = False
 
     @property
     def playing(self) -> bool:
@@ -406,6 +413,7 @@ def parse_announce(xml: str | bytes) -> PlayFiState | None:
         controls=controls,
     )
     if meta is not None:
+        state.metadata_reported = True
         state.source = _text(meta, "msource")
         state.artist = _text(meta, "artist")
         state.album = _text(meta, "album")

@@ -39,7 +39,7 @@ seconds, unprompted. Decrypting it yields:
   <payload>
     <deviceid/> <ipaddress/> <name/> <capricaversion/> <volume/> <pstate/>  (1 = playing, 2 = paused)
     <metadata>
-      <artist/> <album/> <trackname/> <imageurl/> <msource/>  (e.g. airplay_media)
+      <artist/> <album/> <trackname/> <imageurl/> <msource/>  (airplay_media, spotify_media, …)
       <station/>
       <transportcontrols> … PLAY_PAUSE / NEXT / PREVIOUS, each with <enabled> … </transportcontrols>
     </metadata>
@@ -50,7 +50,13 @@ seconds, unprompted. Decrypting it yields:
 
 The integration binds UDP `10102`, keeps the announces whose IP matches the
 speaker, and surfaces the metadata and transport state for the speaker's own
-sessions (currently AirPlay). This is read-only and never interrupts playback.
+sessions: AirPlay (`airplay_media`) and Spotify Connect (`spotify_media`). For
+Spotify Connect, `<imageurl>` is the Spotify CDN cover. This is read-only and
+never interrupts playback.
+
+Now and then the speaker sends a status frame without the `<metadata>` block,
+mostly around source changes. The integration keeps the last full state
+through such a frame unless they continue for several seconds.
 
 ## Control — a short TCP exchange, no pairing
 
@@ -70,7 +76,8 @@ internal volume.
 ## What is and isn't used
 
 - The integration uses the UDP broadcast for now-playing and TCP/10113 for
-  transport control of an active AirPlay session. Master volume is set through
+  transport control of an active AirPlay or Spotify Connect session. Master
+  volume is set through
   the Cast receiver (the speaker's real volume), so the Play-Fi volume command
   is implemented but not relied on.
 - Cover art comes from the announce's `<imageurl>`. For AirPlay the speaker

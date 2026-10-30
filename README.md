@@ -21,17 +21,18 @@ one is active and shows it on a single media player:
 | Title and artist | ✓ | ✓ | ✓ | ✓ |
 | Album | ✓ | ✓ | ✓¹ | ✓ |
 | Cover art | ✓ | ✓ | – | ✓ |
-| Progress and duration | ✓ | ✓ | – | ✓ |
+| Progress and duration | ✓ | ✓ | – | ✓³ |
 | Play and pause | ✓ | ✓ | ✓ | ✓ |
 | Next and previous | ✓² | ✓ | ✓ | ✓ |
-| Seek | ✓² | ✓ | – | ✓ |
+| Seek | ✓² | ✓ | – | ✓³ |
 | Stop | ✓ | ✓ | – | pauses |
 | Shuffle and repeat | – | ✓ | – | – |
 | Source shown as | `Chromecast: <app>` | `DLNA`, … | `AirPlay` | `Spotify Connect` |
-| Data comes from | Cast media status | UPnP renderer | The speaker's Play-Fi broadcast | Home Assistant's Spotify integration |
+| Data comes from | Cast media status | UPnP renderer | The speaker's Play-Fi broadcast | Home Assistant's Spotify integration, or the speaker's Play-Fi broadcast |
 
 ¹ Shown when the AirPlay sender provides it.
 ² When the Cast app allows it.
+³ Only with Home Assistant's Spotify integration set up. The Play-Fi broadcast has no position.
 
 Volume and mute work the same for every source: they use the Cast receiver's
 master volume, with UPnP as fallback. See [AirPlay](#airplay) and
@@ -142,27 +143,32 @@ with source `AirPlay` and volume control only. The protocol details are in
 ## Spotify Connect
 
 When you play from the Spotify app with the speaker as the target, the speaker
-streams from Spotify by itself. It does not tell Home Assistant what is playing
-(its Spotify Connect interface on port 81 only returns device identity), and
-neither UPnP nor Cast sees the session. Only your Spotify account knows.
+streams from Spotify by itself, so neither UPnP nor Cast sees the session. The
+integration gets it from one of two places.
 
-To show and control it, set up Home Assistant's built-in **Spotify**
-integration. Nothing else is needed: any Spotify account in Home Assistant that
-is playing on this speaker is picked up automatically. To limit it to one
-account, open **Settings → Devices & services → Loewe klang → Configure** and
-pick that account's Spotify entity.
+**Without any setup**, it reads the speaker's Play-Fi broadcast, the same one
+used for [AirPlay](#airplay). That gives the track, artist, album, cover art
+and play/pause state with source `Spotify Connect`. Play, pause, next and
+previous are sent to the speaker. Updates arrive within a couple of seconds.
+The broadcast carries no playback position, so there is no progress bar or
+seeking. The same network requirements as AirPlay apply.
 
-While Spotify reports this speaker as its active device, the speaker entity shows
-the track, artist, album, cover and progress with source `Spotify Connect`, and
-play, pause, next, previous and seek go to Spotify. Cast and UPnP sessions on
-the speaker take priority. Updates arrive at the Spotify integration's polling
-rate, so a track change can take up to about 30 seconds to show.
+**With Home Assistant's built-in Spotify integration** set up, that takes
+priority and adds progress, duration and seeking. Commands then go through
+Spotify. Any Spotify account in Home Assistant that is playing on this speaker
+is picked up automatically. To limit it to one account, open **Settings →
+Devices & services → Loewe klang → Configure** and pick that account's Spotify
+entity. Updates arrive at the Spotify integration's polling rate, so a track
+change can take up to about 30 seconds to show.
+
+Cast and UPnP sessions on the speaker take priority over both.
 
 ## Limitations
 
 - **Play-Fi app sessions.** The integration reads the speaker's Play-Fi
-  broadcast, but so far only AirPlay sessions are mapped to now-playing and
-  control. Streams started from the Play-Fi app itself have not been verified.
+  broadcast, but so far only AirPlay and Spotify Connect sessions are mapped
+  to now-playing and control. Other sources, such as streams started from the
+  Play-Fi app itself, have not been verified.
   If one shows nothing, download the diagnostics while it plays (the `playfi`
   block shows what the speaker reports) and open an issue.
 - **Grouping and zones**, **input switching**, **presets** and **EQ** are

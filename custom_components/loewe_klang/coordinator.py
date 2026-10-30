@@ -20,6 +20,10 @@ _LOGGER = logging.getLogger(__name__)
 
 # Firmware rarely changes; don't hammer the Cast/AirPlay endpoints every poll.
 FIRMWARE_INTERVAL = 900.0
+# The speaker now and then broadcasts a status frame without its <metadata>
+# block, mostly around source changes. Keep the last full state through such a
+# frame unless they persist this long (it broadcasts every ~2.5 s).
+PLAYFI_METADATA_GRACE = 8.0
 
 
 @dataclass
@@ -69,6 +73,7 @@ class LoeweCoordinator(DataUpdateCoordinator[LoeweState]):
         self._firmware = FirmwareInfo()
         self._firmware_updated = 0.0
         self._playfi: PlayFiState | None = None
+        self._playfi_metadata_seen = 0.0
 
     async def _async_update_data(self) -> LoeweState:
         try:
@@ -117,6 +122,15 @@ class LoeweCoordinator(DataUpdateCoordinator[LoeweState]):
     @callback
     def async_playfi_update(self, state: PlayFiState) -> None:
         """Handle a decoded Play-Fi announce broadcast from the listener."""
+        now = time.monotonic()
+        if state.metadata_reported:
+            self._playfi_metadata_seen = now
+        elif (
+            self._playfi is not None
+            and self._playfi.metadata_reported
+            and now - self._playfi_metadata_seen < PLAYFI_METADATA_GRACE
+        ):
+            return
         self._playfi = state
         if self.data is not None:
             self.async_set_updated_data(

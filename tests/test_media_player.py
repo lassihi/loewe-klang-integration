@@ -343,6 +343,7 @@ async def test_airplay_now_playing_via_playfi(
             track="Test Track",
             image_url="/images/airplay_media/ab12.jpg",
             controls={"PLAY_PAUSE": True, "NEXT": True, "PREVIOUS": True},
+            metadata_reported=True,
         )
     )
     await hass.async_block_till_done()
@@ -377,7 +378,9 @@ async def test_airplay_now_playing_via_playfi(
     ]
     # Paused announce flips the state without ending the session.
     FakePlayFiListener.instance.push(
-        PlayFiState(source="airplay_media", ip_address=HOST, pstate=0)
+        PlayFiState(
+            source="airplay_media", ip_address=HOST, pstate=0, metadata_reported=True
+        )
     )
     await hass.async_block_till_done()
     assert hass.states.get(ENTITY_ID).state == STATE_PAUSED
@@ -390,3 +393,88 @@ async def test_upnp_session_beats_airplay(hass: HomeAssistant, speaker, setup) -
     state = hass.states.get(ENTITY_ID)
     assert state.state == STATE_PLAYING
     assert state.attributes[ATTR_INPUT_SOURCE] != "AirPlay"
+
+
+def _playfi_spotify(pstate: int = playfi.PSTATE_PLAYING) -> PlayFiState:
+    return PlayFiState(
+        ip_address=HOST,
+        source=playfi.PLAYFI_SPOTIFY,
+        pstate=pstate,
+        artist="Test Artist",
+        album="Test Album",
+        track="Test Episode",
+        image_url="https://i.scdn.co/image/abc",
+        controls={"PLAY_PAUSE": True, "NEXT": True, "PREVIOUS": True},
+        metadata_reported=True,
+    )
+
+
+async def test_spotify_connect_via_playfi(hass: HomeAssistant, setup) -> None:
+    """Without the Spotify integration, Spotify Connect comes from Play-Fi."""
+    FakePlayFiListener.instance.push(_playfi_spotify())
+    await hass.async_block_till_done()
+
+    state = hass.states.get(ENTITY_ID)
+    assert state.state == STATE_PLAYING
+    assert state.attributes[ATTR_INPUT_SOURCE] == "Spotify Connect"
+    assert state.attributes["app_name"] == "Spotify"
+    assert state.attributes[ATTR_MEDIA_TITLE] == "Test Episode"
+    assert state.attributes[ATTR_MEDIA_ARTIST] == "Test Artist"
+    assert state.attributes[ATTR_MEDIA_ALBUM_NAME] == "Test Album"
+    assert ATTR_MEDIA_DURATION not in state.attributes
+    entity = hass.data["media_player"].get_entity(ENTITY_ID)
+    assert entity.media_image_url == "https://i.scdn.co/image/abc"
+    features = state.attributes["supported_features"]
+    assert features & MediaPlayerEntityFeature.PAUSE
+    assert features & MediaPlayerEntityFeature.NEXT_TRACK
+    assert not features & MediaPlayerEntityFeature.SEEK
+
+    with patch(
+        "custom_components.loewe_klang.media_player.async_send_transport",
+        new=AsyncMock(),
+    ) as send:
+        await _call(hass, "media_pause")
+        await _call(hass, "media_previous_track")
+    assert [c.args for c in send.await_args_list] == [
+        (HOST, playfi.TRANSPORT_PAUSE),
+        (HOST, playfi.TRANSPORT_PREVIOUS),
+    ]
+
+    FakePlayFiListener.instance.push(_playfi_spotify(playfi.PSTATE_PAUSED))
+    await hass.async_block_till_done()
+    assert hass.states.get(ENTITY_ID).state == STATE_PAUSED
+
+
+async def test_spotify_integration_beats_playfi(
+    hass: HomeAssistant, spotify_setup
+) -> None:
+    """The Spotify integration (with progress and seek) takes priority."""
+    FakePlayFiListener.instance.push(_playfi_spotify())
+    await hass.async_block_till_done()
+    state = hass.states.get(ENTITY_ID)
+    assert state.attributes[ATTR_MEDIA_TITLE] == "Kiitos ei"
+    assert state.attributes[ATTR_MEDIA_DURATION] == 200
+    assert state.attributes["spotify_entity"] == SPOTIFY
+
+
+async def test_playfi_frame_without_metadata_is_ignored_briefly(
+    hass: HomeAssistant, setup
+) -> None:
+    """A stray status frame without metadata does not blank the card."""
+    clock = [1000.0]
+    with patch(
+        "custom_components.loewe_klang.coordinator.time.monotonic",
+        side_effect=lambda: clock[0],
+    ):
+        FakePlayFiListener.instance.push(_playfi_spotify())
+        await hass.async_block_till_done()
+        clock[0] += 3
+        FakePlayFiListener.instance.push(PlayFiState(ip_address=HOST, pstate=2))
+        await hass.async_block_till_done()
+        assert hass.states.get(ENTITY_ID).attributes[ATTR_MEDIA_TITLE] == "Test Episode"
+
+        # If the speaker keeps sending them, the session really ended.
+        clock[0] += 10
+        FakePlayFiListener.instance.push(PlayFiState(ip_address=HOST, pstate=2))
+        await hass.async_block_till_done()
+        assert hass.states.get(ENTITY_ID).state == STATE_IDLE
