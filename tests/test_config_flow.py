@@ -1,6 +1,7 @@
 """Config flow tests."""
 
 import dataclasses
+from unittest.mock import AsyncMock, patch
 
 from homeassistant import config_entries
 from homeassistant.config_entries import ConfigEntryState
@@ -91,13 +92,126 @@ def _serve_description(aioclient_mock, host: str, udn: str = UDN) -> None:
     aioclient_mock.get(f"http://{host}:7000/info", status=404)
 
 
-async def test_ssdp_follows_a_speaker_that_moved(
+async def _discover_move(hass: HomeAssistant, data: SsdpServiceInfo = SSDP) -> dict:
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": config_entries.SOURCE_SSDP}, data=data
+    )
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "confirm_move"
+    assert result["description_placeholders"]["old_host"] == OLD_HOST
+    assert result["description_placeholders"]["new_host"] == HOST
+    return result
+
+
+async def test_ssdp_move_is_not_applied_before_confirmation(
     hass: HomeAssistant, speaker, aioclient_mock
 ) -> None:
     entry = _existing_entry(hass)
     aioclient_mock.get(f"http://{OLD_HOST}:49152/description.xml", status=404)
-    await _discover(hass)
+    await _discover_move(hass)
+    assert entry.data[CONF_HOST] == OLD_HOST
+
+
+async def test_ssdp_move_cannot_skip_confirmation_with_an_unknown_udn(
+    hass: HomeAssistant, speaker, aioclient_mock
+) -> None:
+    """The check after probing asks too, when the announced UDN was unknown."""
+    entry = _existing_entry(hass)
+    aioclient_mock.get(f"http://{OLD_HOST}:49152/description.xml", status=404)
+    await _discover_move(
+        hass, dataclasses.replace(SSDP, upnp={**SSDP.upnp, "UDN": "uuid:unknown"})
+    )
+    assert entry.data[CONF_HOST] == OLD_HOST
+
+
+async def test_ssdp_move_applies_on_confirmation(
+    hass: HomeAssistant, speaker, aioclient_mock
+) -> None:
+    entry = _existing_entry(hass)
+    aioclient_mock.get(f"http://{OLD_HOST}:49152/description.xml", status=404)
+    result = await _discover_move(hass)
+    with patch.object(hass.config_entries, "async_schedule_reload") as reload:
+        result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "speaker_moved"
     assert entry.data[CONF_HOST] == HOST
+    assert entry.data["udn"] == UDN
+    reload.assert_called_once_with(entry.entry_id)
+
+
+async def test_ssdp_move_leaves_reload_to_the_update_listener(
+    hass: HomeAssistant, speaker, aioclient_mock
+) -> None:
+    entry = _existing_entry(hass)
+    listener = AsyncMock()
+    entry.add_update_listener(listener)
+    aioclient_mock.get(f"http://{OLD_HOST}:49152/description.xml", status=404)
+    result = await _discover_move(hass)
+    with patch.object(hass.config_entries, "async_schedule_reload") as reload:
+        await hass.config_entries.flow.async_configure(result["flow_id"], {})
+        await hass.async_block_till_done()
+    assert entry.data[CONF_HOST] == HOST
+    listener.assert_called_once()
+    reload.assert_not_called()
+
+
+async def test_ssdp_move_aborts_if_new_host_stopped_answering(
+    hass: HomeAssistant, speaker, aioclient_mock
+) -> None:
+    entry = _existing_entry(hass)
+    aioclient_mock.get(f"http://{OLD_HOST}:49152/description.xml", status=404)
+    result = await _discover_move(hass)
+    aioclient_mock.clear_requests()
+    aioclient_mock.get(f"http://{OLD_HOST}:49152/description.xml", status=404)
+    aioclient_mock.get(f"http://{HOST}:49152/description.xml", status=404)
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "cannot_connect"
+    assert entry.data[CONF_HOST] == OLD_HOST
+
+
+async def test_ssdp_move_aborts_if_new_host_changed_identity(
+    hass: HomeAssistant, speaker, aioclient_mock
+) -> None:
+    entry = _existing_entry(hass)
+    aioclient_mock.get(f"http://{OLD_HOST}:49152/description.xml", status=404)
+    result = await _discover_move(hass)
+    aioclient_mock.clear_requests()
+    aioclient_mock.get(f"http://{OLD_HOST}:49152/description.xml", status=404)
+    _serve_description(aioclient_mock, HOST, "00000000-0000-4000-8000-00000000dead")
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "cannot_connect"
+    assert entry.data[CONF_HOST] == OLD_HOST
+
+
+async def test_ssdp_move_aborts_if_old_host_came_back(
+    hass: HomeAssistant, speaker, aioclient_mock
+) -> None:
+    entry = _existing_entry(hass)
+    aioclient_mock.get(f"http://{OLD_HOST}:49152/description.xml", status=404)
+    result = await _discover_move(hass)
+    aioclient_mock.clear_requests()
+    _serve_description(aioclient_mock, OLD_HOST)
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "already_configured"
+    assert entry.data[CONF_HOST] == OLD_HOST
+
+
+async def test_ssdp_move_aborts_if_entry_changed_meanwhile(
+    hass: HomeAssistant, speaker, aioclient_mock
+) -> None:
+    entry = _existing_entry(hass)
+    aioclient_mock.get(f"http://{OLD_HOST}:49152/description.xml", status=404)
+    result = await _discover_move(hass)
+    hass.config_entries.async_update_entry(
+        entry, data={**entry.data, CONF_HOST: "192.0.2.50"}
+    )
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "already_configured"
+    assert entry.data[CONF_HOST] == "192.0.2.50"
 
 
 async def test_ssdp_ignores_spoof_while_speaker_still_answers(

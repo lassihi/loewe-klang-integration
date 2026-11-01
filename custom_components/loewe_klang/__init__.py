@@ -35,7 +35,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: LoeweConfigEntry) -> boo
     await coordinator.async_config_entry_first_refresh()
 
     cast: CastBridge | None = None
-    cast_uuid = device.cast_uuid or entry.data.get(CONF_CAST_UUID)
+    # The live value comes from an unauthenticated endpoint, so it must not
+    # override what was stored when the speaker was set up.
+    cast_uuid = entry.data.get(CONF_CAST_UUID) or device.cast_uuid
     if cast_uuid:
         cast = CastBridge(hass, speaker.host, cast_uuid, coordinator.async_cast_update)
         try:

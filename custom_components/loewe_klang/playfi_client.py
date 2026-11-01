@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import socket
+import time
 from collections.abc import Callable, Collection
 
 from . import playfi
@@ -24,8 +25,13 @@ _LOGGER = logging.getLogger(__name__)
 
 # The speaker answers a command quickly; don't hang a service call on it.
 _COMMAND_TIMEOUT = 4.0
-# Real announces are around 2 KB; anything far larger is not from a speaker.
-_MAX_DATAGRAM_SIZE = 8192
+# Real announces reach about 3.5 KB; anything larger is not from a speaker.
+_MAX_DATAGRAM_SIZE = 4096
+# Decryption is pure Python and runs on the event loop, and the source address
+# can be spoofed, so cap the frames decoded per listener. A speaker broadcasts
+# every ~2.5 s, sometimes a few variants at once, well inside this budget.
+_MAX_FRAMES_PER_SECOND = 5.0
+_FRAME_BURST = 10.0
 
 
 class PlayFiListener(asyncio.DatagramProtocol):
@@ -48,12 +54,27 @@ class PlayFiListener(asyncio.DatagramProtocol):
         self._on_state = on_state
         self._device_id = device_id.lower() if device_id else None
         self._transport: asyncio.DatagramTransport | None = None
+        self._tokens = _FRAME_BURST
+        self._tokens_updated = time.monotonic()
+
+    def _take_token(self) -> bool:
+        """Spend one token from the decode budget, False if it is exhausted."""
+        now = time.monotonic()
+        elapsed = now - self._tokens_updated
+        self._tokens = min(_FRAME_BURST, self._tokens + elapsed * _MAX_FRAMES_PER_SECOND)
+        self._tokens_updated = now
+        if self._tokens < 1:
+            return False
+        self._tokens -= 1
+        return True
 
     def connection_made(self, transport: asyncio.BaseTransport) -> None:
         self._transport = transport  # type: ignore[assignment]
 
     def datagram_received(self, data: bytes, addr: tuple[str, int]) -> None:
         if addr[0] not in self._source_ips or len(data) > _MAX_DATAGRAM_SIZE:
+            return
+        if not self._take_token():
             return
         xml = playfi.decode(data, PLAYFI_BLOWFISH_KEY)
         if xml is None:

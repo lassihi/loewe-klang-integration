@@ -188,6 +188,19 @@ Cast and UPnP sessions on the speaker take priority over both.
   may ignore. Volume and mute therefore go through Cast whenever it is
   connected.
 
+## Security
+
+Run this integration on a trusted network. It is limited by the protocols the
+speaker offers:
+
+- **No authentication on local protocols.** UPnP, Play-Fi control (TCP/10113)
+  and Play-Fi broadcasts (UDP/10102) don't authenticate anyone. Anyone on the
+  LAN can control the speaker and forge the state it reports, including what
+  Home Assistant shows as playing.
+- **Unverified Cast TLS.** pychromecast doesn't verify the Cast TLS certificate
+  and has no option to do so, so someone able to intercept LAN traffic could
+  impersonate the Cast receiver.
+
 ## Development
 
 ```bash

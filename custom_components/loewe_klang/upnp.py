@@ -15,12 +15,15 @@ import logging
 import plistlib
 import re
 import socket
+from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from typing import Any
 from xml.etree import ElementTree as ET
+from xml.parsers.expat import ExpatError
 from xml.sax.saxutils import escape
 
 import aiohttp
+from aiohttp.abc import AbstractResolver, ResolveResult
 from yarl import URL
 
 _LOGGER = logging.getLogger(__name__)
@@ -33,6 +36,22 @@ AIRPLAY_SESSION_ACTIVE = 0x800
 TIMEOUT = aiohttp.ClientTimeout(total=6)
 IMAGE_MAX_REDIRECTS = 3
 _REDIRECT_STATUSES = {301, 302, 303, 307, 308}
+# Replies come from unauthenticated LAN peers or hosts named by them, and the
+# timeout alone would let a fast server fill memory.
+MAX_RESPONSE_BYTES = 1024 * 1024
+MAX_IMAGE_BYTES = 10 * 1024 * 1024
+_READ_CHUNK = 64 * 1024
+# What plistlib and json can raise on hostile input, beyond their documented errors.
+_PARSE_ERRORS = (
+    plistlib.InvalidFileException,
+    ExpatError,
+    ValueError,
+    LookupError,
+    AttributeError,
+    TypeError,
+    OverflowError,
+    RecursionError,
+)
 
 AVT = "AVTransport"
 RC = "RenderingControl"
@@ -123,10 +142,13 @@ def _find_text(root: ET.Element, name: str) -> str | None:
 
 def parse_time(value: str | None) -> int | None:
     """Parse H:MM:SS(.ms) into seconds."""
-    if not value or not re.match(r"^\d+:\d{1,2}:\d{1,2}", value):
+    if not value or not re.fullmatch(r"\d+:\d{1,2}:\d{1,2}(\.\d+)?", value):
         return None
-    hours, minutes, seconds = value.split(":")[:3]
-    return int(hours) * 3600 + int(minutes) * 60 + int(float(seconds))
+    hours, minutes, seconds = value.split(":")
+    try:
+        return int(hours) * 3600 + int(minutes) * 60 + int(float(seconds))
+    except (ValueError, OverflowError):  # e.g. beyond Python's int digit limit
+        return None
 
 
 def format_time(seconds: float) -> str:
@@ -173,6 +195,102 @@ def parse_didl(didl: str | None) -> TrackInfo:
     if info.title in ("", "Unknown"):
         info.title = None
     return info
+
+
+def _load_plist(raw: bytes | None) -> dict[str, Any] | None:
+    """Parse a plist from the speaker; None unless it is a well-formed dict."""
+    if not raw:
+        return None
+    try:
+        data = plistlib.loads(raw)
+    except _PARSE_ERRORS:
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _load_json(raw: bytes | None) -> dict[str, Any] | None:
+    """Parse JSON from the speaker; None unless it is a well-formed dict."""
+    if not raw:
+        return None
+    try:
+        data = json.loads(raw)
+    except _PARSE_ERRORS:
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _str_value(data: dict[str, Any], key: str) -> str | None:
+    """A string field from speaker-supplied data; other types are dropped."""
+    value = data.get(key)
+    return value if isinstance(value, str) else None
+
+
+def _is_ip_literal(host: str) -> bool:
+    try:
+        ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    return True
+
+
+async def _read_capped(resp: aiohttp.ClientResponse, limit: int) -> bytes | None:
+    """Read a response body, or return None if it is larger than ``limit``."""
+    length = resp.headers.get("Content-Length", "")
+    if length.isdigit() and int(length) > limit:
+        return None
+    stream = resp.content
+    body = bytearray()
+    while chunk := await stream.read(_READ_CHUNK):
+        body += chunk
+        if len(body) > limit:
+            return None
+    return bytes(body)
+
+
+def _decode_text(raw: bytes, charset: str | None) -> str:
+    """Decode a SOAP reply; a bad charset or bytes will just fail XML parsing."""
+    try:
+        return raw.decode(charset or "utf-8", "replace")
+    except LookupError:
+        return raw.decode("utf-8", "replace")
+
+
+class _PinnedResolver(AbstractResolver):
+    """Answers for one hostname with addresses that were already validated."""
+
+    def __init__(self, host: str, addresses: list[str]) -> None:
+        self._host = host
+        self._addresses = addresses
+
+    async def resolve(
+        self, host: str, port: int = 0, family: int = socket.AF_UNSPEC
+    ) -> list[ResolveResult]:
+        if host != self._host:
+            raise OSError(f"Unexpected host {host}")
+        results: list[ResolveResult] = []
+        for address in self._addresses:
+            addr_family = (
+                socket.AF_INET6
+                if ipaddress.ip_address(address).version == 6
+                else socket.AF_INET
+            )
+            if family in (socket.AF_UNSPEC, addr_family):
+                results.append(
+                    {
+                        "hostname": host,
+                        "host": address,
+                        "port": port,
+                        "family": addr_family,
+                        "proto": 0,
+                        "flags": socket.AI_NUMERICHOST,
+                    }
+                )
+        if not results:
+            raise OSError(f"No usable address for {host}")
+        return results
+
+    async def close(self) -> None:
+        """Nothing to release."""
 
 
 def _is_public_ip(address: str) -> bool:
@@ -231,7 +349,10 @@ class LoeweSpeaker:
                     headers=headers,
                     timeout=TIMEOUT,
                 ) as resp:
-                    text = await resp.text()
+                    raw = await _read_capped(resp, MAX_RESPONSE_BYTES)
+                    if raw is None:
+                        raise LoeweError(f"{action} failed: response too large")
+                    text = _decode_text(raw, resp.charset)
                 break
             except aiohttp.ServerDisconnectedError as err:
                 if attempt:
@@ -240,7 +361,7 @@ class LoeweSpeaker:
                 raise LoeweError(f"{action} failed: {err!r}") from err
         try:
             root = ET.fromstring(text)
-        except ET.ParseError as err:
+        except (ET.ParseError, LookupError) as err:
             raise LoeweError(f"{action}: invalid response") from err
         if _find_text(root, "Fault") is not None or resp.status >= 400:
             code = _find_text(root, "errorCode")
@@ -379,23 +500,54 @@ class LoeweSpeaker:
             ) as resp:
                 if resp.status != 200:
                     return None
-                return await resp.read()
+                return await _read_capped(resp, MAX_RESPONSE_BYTES)
         except (aiohttp.ClientError, TimeoutError):
             return None
 
-    async def _image_url_allowed(self, url: URL) -> bool:
-        """Only the speaker itself and public addresses may serve cover art."""
+    async def _image_addresses(self, url: URL) -> list[str] | None:
+        """Vet a cover art URL: only the speaker and public addresses may serve it.
+
+        Returns None if refused, otherwise the addresses to connect to. The list
+        is empty when there is no later lookup to pin (the configured speaker or
+        an IP literal). A hostname's addresses must be pinned, as resolving it
+        again at connect time could give a different, internal, answer.
+        """
         if url.scheme not in ("http", "https") or not url.host:
-            return False
+            return None
         if url.host == self.host:
-            return True
+            return []
         try:
             infos = await asyncio.get_running_loop().getaddrinfo(
                 url.host, url.port, type=socket.SOCK_STREAM
             )
-            return bool(infos) and all(_is_public_ip(info[4][0]) for info in infos)
+            if not infos or not all(_is_public_ip(info[4][0]) for info in infos):
+                return None
         except (OSError, ValueError):
-            return False
+            return None
+        if _is_ip_literal(url.host):
+            return []
+        return list(dict.fromkeys(info[4][0] for info in infos))
+
+    @contextlib.asynccontextmanager
+    async def _image_session(
+        self, host: str, addresses: list[str]
+    ) -> AsyncIterator[aiohttp.ClientSession]:
+        """A session that can only reach the vetted addresses of ``host``.
+
+        TLS still verifies against ``host``, as only name resolution is replaced.
+        """
+        if not addresses:
+            yield self._session
+            return
+        async with aiohttp.ClientSession(
+            connector=aiohttp.TCPConnector(
+                resolver=_PinnedResolver(host, addresses),
+                use_dns_cache=False,
+                force_close=True,
+            ),
+            cookie_jar=aiohttp.DummyCookieJar(),
+        ) as session:
+            yield session
 
     async def async_get_image(self, url: str) -> tuple[bytes, str] | None:
         """Fetch cover art whose URL came from unauthenticated LAN traffic.
@@ -407,19 +559,22 @@ class LoeweSpeaker:
         try:
             target = URL(url)
             for _ in range(IMAGE_MAX_REDIRECTS + 1):
-                if not await self._image_url_allowed(target):
+                addresses = await self._image_addresses(target)
+                if addresses is None:
                     _LOGGER.debug("Refusing cover art from %s", target.host)
                     return None
-                async with self._session.get(
-                    target, timeout=TIMEOUT, allow_redirects=False
-                ) as resp:
+                async with (
+                    self._image_session(target.host or "", addresses) as session,
+                    session.get(target, timeout=TIMEOUT, allow_redirects=False) as resp,
+                ):
                     if resp.status in _REDIRECT_STATUSES:
                         target = target.join(URL(resp.headers.get("Location", "")))
                         continue
                     mime = resp.headers.get("Content-Type", "").split(";")[0].strip()
                     if resp.status != 200 or not mime.lower().startswith("image/"):
                         return None
-                    return await resp.read(), mime
+                    body = await _read_capped(resp, MAX_IMAGE_BYTES)
+                    return None if body is None else (body, mime)
         except (aiohttp.ClientError, TimeoutError, ValueError):
             return None
         return None
@@ -431,7 +586,7 @@ class LoeweSpeaker:
             raise LoeweError(f"No UPnP renderer at {self.host}:{UPNP_PORT}")
         try:
             root = ET.fromstring(raw)
-        except ET.ParseError as err:
+        except (ET.ParseError, LookupError) as err:
             raise LoeweError("Invalid device description") from err
         manufacturer = _find_text(root, "manufacturer") or ""
         model_name = _find_text(root, "modelName") or ""
@@ -447,22 +602,14 @@ class LoeweSpeaker:
             self._get(f"http://{self.host}:{CAST_HTTP_PORT}/setup/eureka_info"),
             self._get(f"http://{self.host}:{AIRPLAY_PORT}/info"),
         )
-        if eureka:
-            try:
-                data: dict[str, Any] = json.loads(eureka)
-                info.cast_uuid = data.get("ssdp_udn")
-                info.mac = data.get("mac_address")
-            except ValueError:
-                pass
-        if airplay:
-            try:
-                plist = plistlib.loads(airplay)
-                info.model = plist.get("model")
-                info.firmware = plist.get("firmwareRevision")
-                info.manufacturer = str(plist.get("manufacturer", "Loewe")).title()
-                info.mac = info.mac or plist.get("deviceID")
-            except (plistlib.InvalidFileException, ValueError):
-                pass
+        if (data := _load_json(eureka)) is not None:
+            info.cast_uuid = _str_value(data, "ssdp_udn")
+            info.mac = _str_value(data, "mac_address")
+        if (plist := _load_plist(airplay)) is not None:
+            info.model = _str_value(plist, "model")
+            info.firmware = _str_value(plist, "firmwareRevision")
+            info.manufacturer = (_str_value(plist, "manufacturer") or "Loewe").title()
+            info.mac = info.mac or _str_value(plist, "deviceID")
         return info
 
     async def async_get_firmware(self) -> FirmwareInfo:
@@ -477,20 +624,13 @@ class LoeweSpeaker:
             self._get(f"http://{self.host}:{CAST_HTTP_PORT}/setup/eureka_info"),
             self._get(f"http://{self.host}:{AIRPLAY_PORT}/info"),
         )
-        if eureka:
-            try:
-                data: dict[str, Any] = json.loads(eureka)
-                fw.cast = data.get("cast_build_revision")
-                fw.cast_build = data.get("build_version")
-                if "has_update" in data:
-                    fw.update_available = bool(data["has_update"])
-            except ValueError:
-                pass
-        if airplay:
-            try:
-                fw.playfi = plistlib.loads(airplay).get("firmwareRevision")
-            except (plistlib.InvalidFileException, ValueError):
-                pass
+        if (data := _load_json(eureka)) is not None:
+            fw.cast = _str_value(data, "cast_build_revision")
+            fw.cast_build = _str_value(data, "build_version")
+            if "has_update" in data:
+                fw.update_available = bool(data["has_update"])
+        if (plist := _load_plist(airplay)) is not None:
+            fw.playfi = _str_value(plist, "firmwareRevision")
         return fw
 
     async def async_get_airplay_active(self) -> bool:
@@ -499,11 +639,6 @@ class LoeweSpeaker:
         The speaker exposes no AirPlay track data or transport state, only this
         flag, which stays set while the sender is paused.
         """
-        raw = await self._get(f"http://{self.host}:{AIRPLAY_PORT}/info")
-        if not raw:
-            return False
-        try:
-            flags = plistlib.loads(raw).get("statusFlags")
-        except (plistlib.InvalidFileException, ValueError):
-            return False
+        plist = _load_plist(await self._get(f"http://{self.host}:{AIRPLAY_PORT}/info"))
+        flags = plist.get("statusFlags") if plist else None
         return isinstance(flags, int) and bool(flags & AIRPLAY_SESSION_ACTIVE)
