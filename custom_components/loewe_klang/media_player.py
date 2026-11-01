@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
 import functools
 import logging
 import re
+import time
 from collections.abc import Awaitable, Callable
 from datetime import datetime
 from typing import Any, Concatenate
@@ -72,6 +74,8 @@ PLAY_MODES: dict[str, tuple[bool, RepeatMode]] = {
 # One level of the speaker's 30-level Cast scale. A smaller step can land halfway
 # between levels and snap back: 0.17 - 0.02 = 0.15 returns to 0.17.
 VOLUME_STEP = 1 / 30
+# Seconds the speaker may take to swap its AirPlay picture after a new track.
+AIRPLAY_ART_SETTLE = 2.0
 # Sessions the speaker runs itself (AirPlay, Spotify Connect) take no UPnP
 # transport commands; volume always works, and play/pause/skip are added when
 # the speaker's Play-Fi broadcast advertises them.
@@ -447,9 +451,10 @@ class LoeweMediaPlayer(CoordinatorEntity[LoeweCoordinator], MediaPlayerEntity):
         if self._cast_active:
             return data.cast.image_url
         if (pf := self._playfi) is not None:
-            return playfi.resolve_image_url(
-                pf.image_url, self._rt.speaker.host, PLAYFI_IMAGE_PORT
-            )
+            host = self._rt.speaker.host
+            if pf.source == PLAYFI_AIRPLAY and not pf.image_url:
+                return playfi.airplay_image_url(pf, host, PLAYFI_IMAGE_PORT)
+            return playfi.resolve_image_url(pf.image_url, host, PLAYFI_IMAGE_PORT)
         return self._track.image_url
 
     @property
@@ -464,6 +469,12 @@ class LoeweMediaPlayer(CoordinatorEntity[LoeweCoordinator], MediaPlayerEntity):
             return await super().async_get_media_image()
         if (url := self.media_image_url) is None:
             return None, None
+        if (pf := self._playfi) is not None and pf.source == PLAYFI_AIRPLAY:
+            # Home Assistant caches by URL, so fetching before the speaker has
+            # swapped its picture would keep the last track's for this one.
+            elapsed = time.monotonic() - self.coordinator.playfi_track_changed
+            if elapsed < AIRPLAY_ART_SETTLE:
+                await asyncio.sleep(AIRPLAY_ART_SETTLE - elapsed)
         return await self._rt.speaker.async_get_image(url) or (None, None)
 
     @property

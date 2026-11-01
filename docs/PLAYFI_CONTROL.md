@@ -83,12 +83,18 @@ internal volume.
   volume is set through
   the Cast receiver (the speaker's real volume), so the Play-Fi volume command
   is implemented but not relied on.
-- Cover art comes from the announce's `<imageurl>`. For AirPlay the speaker
-  leaves it empty (verified with several senders, including Spotify via
-  AirPlay), so no AirPlay artwork is shown. When a source does populate it, a
-  relative path is resolved against the speaker's HTTP server on port `8081`
-  and Home Assistant proxies the image. The proxy only fetches images from the
-  speaker itself or a public address, because the URL is unauthenticated.
+- Cover art comes from the announce's `<imageurl>`. A relative path is resolved
+  against the speaker's HTTP server on port `8081` and Home Assistant proxies
+  the image. The proxy only fetches images from the speaker itself or a public
+  address, because the URL is unauthenticated.
+- For AirPlay `<imageurl>` is unreliable. With Spotify via AirPlay it was empty
+  for many tracks, arrived about 2.5 s late for others, and once went empty
+  again on the same track. The speaker still has the picture: port `8081` serves
+  the current one under any file name under `/images/airplay_media/`, and it
+  matched the track when the announce had no URL. The picture usually changes at
+  about the time of the announce for a new track, so the integration names the
+  file after the track and waits 2 s after a track change before fetching. A
+  track that really has no artwork would show the previous one (not observed).
 - The mutual-TLS XML channel on port 10109 that an earlier draft targeted is a
   separate, legacy control path the app does not use; pairing on it interrupts
   the active source. It is intentionally avoided.

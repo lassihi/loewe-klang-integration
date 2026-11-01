@@ -501,6 +501,55 @@ async def test_cover_art_proxy_is_guarded(
     assert await entity.async_get_media_image() == expected
 
 
+async def test_airplay_art_without_announced_url(
+    hass: HomeAssistant, speaker, setup, aioclient_mock
+) -> None:
+    """The speaker holds the art even when the announce leaves the URL out."""
+
+    def announce(track: str, image_url: str | None = None) -> PlayFiState:
+        return PlayFiState(
+            source="airplay_media",
+            pstate=playfi.PSTATE_PLAYING,
+            track=track,
+            image_url=image_url,
+            metadata_reported=True,
+        )
+
+    speaker.airplay_flags = 0xC04
+    await _poll(hass)
+    entity = hass.data["media_player"].get_entity(ENTITY_ID)
+
+    FakePlayFiListener.instance.push(announce("One"))
+    await hass.async_block_till_done()
+    first = entity.media_image_url
+    assert first.startswith(f"http://{HOST}:8081/images/airplay_media/")
+    assert hass.states.get(ENTITY_ID).attributes["entity_picture"]
+
+    # A repeat of the same track keeps its URL, so the picture doesn't reload.
+    FakePlayFiListener.instance.push(announce("One"))
+    await hass.async_block_till_done()
+    assert entity.media_image_url == first
+
+    # The fetch right after a track change waits for the speaker's new picture.
+    aioclient_mock.get(
+        first, content=b"jpeg", headers={"Content-Type": "image/jpeg"}
+    )
+    with patch(
+        "custom_components.loewe_klang.media_player.asyncio.sleep", AsyncMock()
+    ) as sleep:
+        assert await entity.async_get_media_image() == (b"jpeg", "image/jpeg")
+    sleep.assert_awaited_once()
+
+    FakePlayFiListener.instance.push(announce("Two"))
+    await hass.async_block_till_done()
+    assert entity.media_image_url != first
+
+    # An announced URL still wins.
+    FakePlayFiListener.instance.push(announce("Two", "/images/a.jpg"))
+    await hass.async_block_till_done()
+    assert entity.media_image_url == f"http://{HOST}:8081/images/a.jpg"
+
+
 async def test_spotify_connect_via_playfi(hass: HomeAssistant, setup) -> None:
     """Without the Spotify integration, Spotify Connect comes from Play-Fi."""
     FakePlayFiListener.instance.push(_playfi_spotify())

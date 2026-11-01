@@ -20,6 +20,7 @@ I/O lives in :mod:`.playfi_client`. See ``docs/PLAYFI_CONTROL.md``.
 from __future__ import annotations
 
 import functools
+import hashlib
 import struct
 from dataclasses import dataclass, field
 from xml.etree import ElementTree as ET
@@ -418,6 +419,20 @@ def resolve_image_url(url: str | None, host: str, port: int) -> str | None:
     if "://" in url:
         return url
     return f"http://{host}:{port}/{url.lstrip('/')}"
+
+
+def airplay_image_url(state: PlayFiState, host: str, port: int) -> str | None:
+    """URL of the AirPlay artwork, which the announce often leaves out.
+
+    The speaker keeps one picture, the current one, and serves it under any
+    file name. Naming it after the track gives each track its own URL, so Home
+    Assistant fetches the picture again when the track changes.
+    """
+    if not state.has_metadata:
+        return None
+    track = "\0".join(v or "" for v in (state.artist, state.album, state.track))
+    name = hashlib.sha256(track.encode()).hexdigest()[:32]
+    return f"http://{host}:{port}/images/airplay_media/{name}.jpg"
 
 
 def parse_announce(xml: str | bytes) -> PlayFiState | None:

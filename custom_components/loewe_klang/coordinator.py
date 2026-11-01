@@ -74,6 +74,7 @@ class LoeweCoordinator(DataUpdateCoordinator[LoeweState]):
         self._firmware_updated = 0.0
         self._playfi: PlayFiState | None = None
         self._playfi_metadata_seen = 0.0
+        self.playfi_track_changed = 0.0
 
     async def _async_update_data(self) -> LoeweState:
         try:
@@ -131,6 +132,8 @@ class LoeweCoordinator(DataUpdateCoordinator[LoeweState]):
             and now - self._playfi_metadata_seen < PLAYFI_METADATA_GRACE
         ):
             return
+        if self._playfi is None or state.track != self._playfi.track:
+            self.playfi_track_changed = now
         self._playfi = state
         # The speaker repeats itself every few seconds; only a change needs a
         # state write, so a flood of identical frames can't grow the recorder.

@@ -20,7 +20,7 @@ one is active and shows it on a single media player:
 | --- | :---: | :---: | :---: | :---: | :---: |
 | Title and artist | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Album | ✓ | ✓ | ✓¹ | ✓ | ✓ |
-| Cover art | ✓ | ✓ | – | ✓ | ✓ |
+| Cover art | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Progress and duration | ✓ | ✓ | – | ✓³ | – |
 | Play and pause | ✓ | ✓ | ✓ | ✓ | ✓⁵ |
 | Next and previous | ✓² | ✓ | ✓ | ✓ | ✓⁵ |
@@ -155,9 +155,9 @@ AirPlay sender. Volume uses the Cast master volume as usual. Reading the broadca
 passive, so it never interrupts what is playing.
 
 State changes appear within a couple of seconds, at the speaker's broadcast
-rate. The album appears when the sender provides it, but the speaker does not
-relay AirPlay cover art, so none is shown. There is no progress bar or seeking
-for AirPlay either, because the speaker does not report the position.
+rate. The album appears when the sender provides it, and cover art comes from
+the speaker, which keeps the current track's picture. There is no progress bar
+or seeking for AirPlay, because the speaker does not report the position.
 
 Network requirements:
 
