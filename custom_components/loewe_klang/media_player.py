@@ -69,7 +69,9 @@ PLAY_MODES: dict[str, tuple[bool, RepeatMode]] = {
     "SHUFFLE_NOREPEAT": (True, RepeatMode.OFF),
     "SHUFFLE": (True, RepeatMode.ALL),
 }
-VOLUME_STEP = 0.02
+# One level of the speaker's 30-level Cast scale. A smaller step can land halfway
+# between levels and snap back: 0.17 - 0.02 = 0.15 returns to 0.17.
+VOLUME_STEP = 1 / 30
 # Sessions the speaker runs itself (AirPlay, Spotify Connect) take no UPnP
 # transport commands; volume always works, and play/pause/skip are added when
 # the speaker's Play-Fi broadcast advertises them.

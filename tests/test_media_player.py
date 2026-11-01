@@ -184,6 +184,23 @@ async def test_volume_falls_back_to_upnp(
     assert "<DesiredVolume>20</DesiredVolume>" in dict(speaker.calls)["SetVolume"]
 
 
+async def test_volume_buttons_move_one_speaker_level(
+    hass: HomeAssistant, setup, speaker, cast
+) -> None:
+    """The speaker snaps to 30 levels, so a step must never land between two."""
+    for level in range(1, 30):
+        cast.instance.push(volume=level / 30)
+        await hass.async_block_till_done()
+
+        await _call(hass, "volume_down")
+        requested = cast.instance.async_set_volume.await_args.args[0]
+        assert round(requested * 30) == level - 1
+
+        await _call(hass, "volume_up")
+        requested = cast.instance.async_set_volume.await_args.args[0]
+        assert round(requested * 30) == level + 1
+
+
 async def test_play_media_prefers_cast(
     hass: HomeAssistant, setup, speaker, cast
 ) -> None:

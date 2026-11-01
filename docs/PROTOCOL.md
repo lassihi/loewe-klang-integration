@@ -53,7 +53,8 @@ LinkPlay-like PlayMedium names.
 - The Cast UUID equals `ssdp_udn` from `/setup/eureka_info`.
 - `volume_control_type` is `master`, so Cast volume is the speaker's real
   volume. Setting 0.35 resulted in 0.37, which suggests the speaker maps values
-  to its own volume scale.
+  to its own volume scale, most likely 30 levels 1/30 apart. The volume buttons
+  step by one level, because a 0.02 step could not get below values such as 0.17.
 - Changing the volume clears mute.
 - Launching the Default Media Receiver (`CC1AD845`) took about 3 to 6 seconds
   in testing. Metadata, pause, resume, seek and stop all worked.
