@@ -22,6 +22,7 @@ one is active and shows it on a single media player:
 | Album | ✓ | ✓ | ✓¹ | ✓ | ✓ |
 | Cover art | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Progress and duration | ✓ | ✓ | – | ✓³ | – |
+| Volume and mute | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Play and pause | ✓ | ✓ | ✓ | ✓ | ✓⁵ |
 | Next and previous | ✓² | ✓ | ✓ | ✓ | ✓⁵ |
 | Seek | ✓² | ✓ | – | ✓³ | – |
