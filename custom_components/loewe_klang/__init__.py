@@ -7,16 +7,26 @@ import logging
 from homeassistant.const import CONF_HOST, EVENT_HOMEASSISTANT_STOP, Platform
 from homeassistant.core import Event, HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.typing import ConfigType
 
+from .cards import async_register_cards
 from .cast import CastBridge
-from .const import CONF_CAST_UUID
+from .const import CONF_CAST_UUID, DOMAIN
 from .coordinator import LoeweConfigEntry, LoeweCoordinator, LoeweRuntimeData
 from .playfi_client import PlayFiListener, async_create_listener
 from .upnp import LoeweError, LoeweSpeaker
 
 _LOGGER = logging.getLogger(__name__)
 PLATFORMS = [Platform.BINARY_SENSOR, Platform.MEDIA_PLAYER, Platform.SENSOR]
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
+
+
+async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
+    """Register the Lovelace cards, which every speaker shares."""
+    await async_register_cards(hass)
+    return True
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: LoeweConfigEntry) -> bool:

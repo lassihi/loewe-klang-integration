@@ -121,6 +121,26 @@ data:
   media_content_id: https://example.com/stream.mp3
 ```
 
+## Dashboard cards
+
+The integration includes three cards. They load automatically, with no resource
+to add, and appear in the card picker.
+
+| Card | Shows |
+| --- | --- |
+| `custom:loewe-klang-player-card` | Cover art, transport controls, progress and volume |
+| `custom:loewe-klang-mini-card` | Compact now playing with play/pause, next and volume |
+| `custom:loewe-klang-status-card` | Source, Cast and AirPlay connections, and firmware |
+
+```yaml
+type: custom:loewe-klang-player-card
+entity: media_player.loewe_klang_mr3
+```
+
+All three accept an optional `name`. The player and mini cards accept
+`show_volume: false`, and the player card accepts `show_progress: false`.
+Controls only appear when the current source supports them.
+
 ## AirPlay
 
 When you AirPlay to the speaker from an iPhone or Mac, neither UPnP nor Cast
