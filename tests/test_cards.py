@@ -8,7 +8,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from homeassistant.core import HomeAssistant
 
 from custom_components.loewe_klang import cards
-from custom_components.loewe_klang.cards import CARDS_FILE, CARDS_URL
+from custom_components.loewe_klang.cards import (
+    CARDS_FILE,
+    FRONTEND_DIR,
+    FRONTEND_URL,
+    LOADER_FILE,
+)
 
 
 async def test_cards_are_served_and_loaded(hass: HomeAssistant) -> None:
@@ -22,10 +27,22 @@ async def test_cards_are_served_and_loaded(hass: HomeAssistant) -> None:
         await cards.async_register_cards(hass)
 
     config = hass.http.async_register_static_paths.await_args.args[0][0]
-    assert config.url_path == CARDS_URL
-    assert config.path == str(CARDS_FILE)
+    assert config.url_path == FRONTEND_URL
+    assert config.path == str(FRONTEND_DIR)
     assert config.cache_headers is True
-    add_url.assert_called_once_with(hass, f"{CARDS_URL}?v=1.2.3")
+    # The loader, not the cards: see test_cards_load_after_the_app.
+    add_url.assert_called_once_with(hass, f"{FRONTEND_URL}/{LOADER_FILE.name}?v=1.2.3")
+
+
+def test_cards_load_after_the_app() -> None:
+    """The frontend's registry polyfill must be in place before the cards run.
+
+    Cards evaluated earlier fail with "Custom element doesn't exist".
+    """
+    loader = LOADER_FILE.read_text(encoding="utf-8")
+    assert 'whenDefined("home-assistant")' in loader
+    assert CARDS_FILE.name in loader
+    assert re.search(r"^\s*import\s+[\"'{]", loader, re.MULTILINE) is None
 
 
 def test_cards_never_build_markup_from_dynamic_values() -> None:
