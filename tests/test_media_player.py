@@ -98,6 +98,27 @@ async def test_upnp_playing(hass: HomeAssistant, setup, speaker) -> None:
     )
 
 
+@pytest.mark.parametrize(
+    ("uri", "expected"),
+    [
+        ("http://192.0.2.5/media/a.mp3?authSig=secret", "http://192.0.2.5/media/a.mp3"),
+        ("http://192.0.2.5/a.mp3#authSig=secret", "http://192.0.2.5/a.mp3"),
+        ("http://[bad/a.mp3?authSig=secret", "http://[bad/a.mp3"),
+        ("http://192.0.2.5/a.mp3", "http://192.0.2.5/a.mp3"),
+    ],
+)
+async def test_media_content_id_hides_query(
+    hass: HomeAssistant, speaker, setup, uri: str, expected: str
+) -> None:
+    speaker.set_playing()
+    speaker.responses["GetPositionInfo"] = (
+        "<s:Envelope xmlns:s='http://schemas.xmlsoap.org/soap/envelope/'><s:Body>"
+        f"<r><TrackURI>{uri}</TrackURI></r></s:Body></s:Envelope>"
+    )
+    await _poll(hass)
+    assert hass.states.get(ENTITY_ID).attributes["media_content_id"] == expected
+
+
 async def test_cast_session_takes_over(
     hass: HomeAssistant, setup, speaker, cast
 ) -> None:

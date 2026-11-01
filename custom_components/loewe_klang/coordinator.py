@@ -132,7 +132,9 @@ class LoeweCoordinator(DataUpdateCoordinator[LoeweState]):
         ):
             return
         self._playfi = state
-        if self.data is not None:
+        # The speaker repeats itself every few seconds; only a change needs a
+        # state write, so a flood of identical frames can't grow the recorder.
+        if self.data is not None and state != self.data.playfi:
             # Not async_set_updated_data: it restarts the poll timer, so announces
             # arriving faster than SCAN_INTERVAL would stop polling altogether. It
             # would also mark the speaker reachable on a frame anyone can forge.

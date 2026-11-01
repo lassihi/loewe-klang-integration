@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import functools
 import logging
+import re
 from collections.abc import Awaitable, Callable
 from datetime import datetime
 from typing import Any, Concatenate
@@ -387,7 +388,11 @@ class LoeweMediaPlayer(CoordinatorEntity[LoeweCoordinator], MediaPlayerEntity):
 
     @property
     def media_content_id(self) -> str | None:
-        return None if self._cast_active else self._track.uri
+        if self._cast_active or not (uri := self._track.uri):
+            return None
+        # Home Assistant media URLs carry a signature (authSig) in the query, and
+        # entity state is visible to every user and kept in history.
+        return re.split(r"[?#]", uri, maxsplit=1)[0]
 
     @property
     def media_title(self) -> str | None:

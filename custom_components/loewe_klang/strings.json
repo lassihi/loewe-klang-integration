@@ -11,6 +11,10 @@
       },
       "confirm": {
         "description": "Set up {name} at {host}?"
+      },
+      "confirm_move": {
+        "title": "Speaker address changed",
+        "description": "{name} no longer answers at {old_host}, and a device at {new_host} claims to be it. Discovery messages are not authenticated, so only continue if you expected this speaker to get a new address. Move {name} to {new_host}?"
       }
     },
     "error": {
@@ -18,8 +22,10 @@
     },
     "abort": {
       "already_configured": "This speaker is already configured.",
+      "already_in_progress": "Setup for this speaker is already in progress.",
       "cannot_connect": "Could not reach the speaker.",
-      "not_loewe": "The discovered device is not a supported Play-Fi speaker."
+      "not_loewe": "The discovered device is not a supported Play-Fi speaker.",
+      "speaker_moved": "The speaker's address was updated."
     }
   },
   "entity": {

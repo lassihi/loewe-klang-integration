@@ -121,6 +121,26 @@ data:
   media_content_id: https://example.com/stream.mp3
 ```
 
+## Dashboard cards
+
+The integration includes three cards. They load automatically, with no resource
+to add, and appear in the card picker.
+
+| Card | Shows |
+| --- | --- |
+| `custom:loewe-klang-player-card` | Cover art, transport controls, progress and volume |
+| `custom:loewe-klang-mini-card` | Compact now playing with play/pause, next and volume |
+| `custom:loewe-klang-status-card` | Source, Cast and AirPlay connections, and firmware |
+
+```yaml
+type: custom:loewe-klang-player-card
+entity: media_player.loewe_klang_mr3
+```
+
+All three accept an optional `name`. The player and mini cards accept
+`show_volume: false`, and the player card accepts `show_progress: false`.
+Controls only appear when the current source supports them.
+
 ## AirPlay
 
 When you AirPlay to the speaker from an iPhone or Mac, neither UPnP nor Cast
@@ -187,6 +207,19 @@ Cast and UPnP sessions on the speaker take priority over both.
 - **UPnP volume** on this firmware is a per-session DLNA value that the speaker
   may ignore. Volume and mute therefore go through Cast whenever it is
   connected.
+
+## Security
+
+Run this integration on a trusted network. It is limited by the protocols the
+speaker offers:
+
+- **No authentication on local protocols.** UPnP, Play-Fi control (TCP/10113)
+  and Play-Fi broadcasts (UDP/10102) don't authenticate anyone. Anyone on the
+  LAN can control the speaker and forge the state it reports, including what
+  Home Assistant shows as playing.
+- **Unverified Cast TLS.** pychromecast doesn't verify the Cast TLS certificate
+  and has no option to do so, so someone able to intercept LAN traffic could
+  impersonate the Cast receiver.
 
 ## Development
 

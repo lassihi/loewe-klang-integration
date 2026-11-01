@@ -8,9 +8,17 @@ values.
 
 from unittest.mock import patch
 
+import pytest
+from homeassistant.const import CONF_HOST
+from homeassistant.core import HomeAssistant
+from pytest_homeassistant_custom_component.common import MockConfigEntry
+
 from custom_components.loewe_klang import playfi
+from custom_components.loewe_klang.const import DOMAIN
 from custom_components.loewe_klang.const import PLAYFI_BLOWFISH_KEY as KEY
 from custom_components.loewe_klang.playfi_client import PlayFiListener
+
+from .conftest import CAST_UUID, HOST, UDN, FakePlayFiListener
 
 # A speaker announce broadcast with the structure of a real klang mr3 frame
 # (AirPlay session, paused). Every identifying value (MAC, addresses, serial,
@@ -151,6 +159,120 @@ def test_listener_does_not_decrypt_foreign_or_oversized_datagrams() -> None:
         listener.datagram_received(b"A" * 8200, (SPEAKER_IP, 10102))
     decode.assert_not_called()
     assert states == []
+
+
+def _frame_of_size(size: int) -> bytes:
+    """A valid announce padded to exactly ``size`` ciphertext bytes (block-aligned)."""
+    return playfi.encode(ANNOUNCE_XML + " " * (size - len(ANNOUNCE_XML) - 1), KEY)[:-1]
+
+
+def test_listener_accepts_frame_at_size_cap() -> None:
+    # Real announces reach about 3.5 KB; the cap must leave them room.
+    listener, states = _listener()
+    frame = _frame_of_size(4096)
+    assert len(frame) == 4096
+    listener.datagram_received(frame, (SPEAKER_IP, 10102))
+    assert len(states) == 1
+
+
+def test_listener_does_not_decrypt_frame_over_size_cap() -> None:
+    listener, states = _listener()
+    with patch.object(playfi, "decode") as decode:
+        listener.datagram_received(_frame_of_size(4096) + b"\n", (SPEAKER_IP, 10102))
+    decode.assert_not_called()
+    assert states == []
+
+
+def test_listener_stops_decrypting_a_flood_then_recovers() -> None:
+    clock = [1000.0]
+    with patch(
+        "custom_components.loewe_klang.playfi_client.time.monotonic",
+        side_effect=lambda: clock[0],
+    ):
+        listener, _states = _listener()
+        with patch.object(playfi, "decode", return_value=None) as decode:
+            for _ in range(100):
+                listener.datagram_received(ANNOUNCE, (SPEAKER_IP, 10102))
+        assert decode.call_count == 10  # the burst, then nothing
+
+        clock[0] += 1
+        with patch.object(playfi, "decode", return_value=None) as decode:
+            for _ in range(100):
+                listener.datagram_received(ANNOUNCE, (SPEAKER_IP, 10102))
+        assert decode.call_count == 5  # one second of refill
+
+
+def test_listener_never_drops_normal_broadcast_cadence() -> None:
+    # Three frame variants at once, every 2.4 s, for ten minutes.
+    clock = [1000.0]
+    with patch(
+        "custom_components.loewe_klang.playfi_client.time.monotonic",
+        side_effect=lambda: clock[0],
+    ):
+        listener, states = _listener()
+        for _ in range(250):
+            for _ in range(3):
+                listener.datagram_received(ANNOUNCE, (SPEAKER_IP, 10102))
+            clock[0] += 2.4
+    assert len(states) == 750
+
+
+def test_foreign_datagrams_do_not_spend_the_speakers_budget() -> None:
+    listener, states = _listener()
+    for _ in range(100):
+        listener.datagram_received(ANNOUNCE, ("192.0.2.66", 10102))
+    listener.datagram_received(ANNOUNCE, (SPEAKER_IP, 10102))
+    assert len(states) == 1
+
+
+@pytest.fixture
+async def setup(hass: HomeAssistant, speaker, cast):
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id=UDN,
+        data={CONF_HOST: HOST, "udn": UDN, "cast_uuid": CAST_UUID},
+    )
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    return entry
+
+
+async def test_unchanged_announce_does_not_notify_listeners(
+    hass: HomeAssistant, setup
+) -> None:
+    coordinator = setup.runtime_data.coordinator
+    state = playfi.parse_announce(ANNOUNCE_XML)
+    with patch.object(coordinator, "async_update_listeners") as notify:
+        FakePlayFiListener.instance.push(state)
+        assert notify.call_count == 1
+        # A separately parsed but identical frame.
+        FakePlayFiListener.instance.push(playfi.parse_announce(ANNOUNCE_XML))
+        assert notify.call_count == 1
+        FakePlayFiListener.instance.push(
+            playfi.parse_announce(ANNOUNCE_XML.replace("Test Track", "Other Track"))
+        )
+        assert notify.call_count == 2
+    assert coordinator.data.playfi.track == "Other Track"
+
+
+async def test_unchanged_announce_keeps_metadata_grace_running(
+    hass: HomeAssistant, setup
+) -> None:
+    """Repeated frames still refresh the grace timer for metadata-less frames."""
+    coordinator = setup.runtime_data.coordinator
+    state = playfi.parse_announce(ANNOUNCE_XML)
+    clock = [1000.0]
+    with patch(
+        "custom_components.loewe_klang.coordinator.time.monotonic",
+        side_effect=lambda: clock[0],
+    ):
+        FakePlayFiListener.instance.push(state)
+        clock[0] += 6
+        FakePlayFiListener.instance.push(playfi.parse_announce(ANNOUNCE_XML))
+        clock[0] += 6  # 12 s after the first frame, 6 s after the repeat
+        FakePlayFiListener.instance.push(playfi.PlayFiState(device_id="0a1b2c3d4e5f"))
+    assert coordinator.data.playfi.track == "Test Track"
 
 
 def test_cipher_is_reused() -> None:

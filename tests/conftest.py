@@ -40,6 +40,14 @@ def auto_enable_custom_integrations(enable_custom_integrations):
     yield
 
 
+@pytest.fixture(autouse=True)
+def skip_frontend_dependencies(hass):
+    """Skip frontend setup and card registration, which need hass_frontend."""
+    hass.config.components.add("frontend")
+    with patch("custom_components.loewe_klang.async_register_cards"):
+        yield
+
+
 class FakeSpeaker:
     """Serves recorded responses from a real klang mr3 and records SOAP calls."""
 
