@@ -76,6 +76,10 @@ Transport code `C` (from the app's enum): `0` shuffle-on, `1` shuffle-off,
 For volume, `V` is the target level or `255` to mute; `IV` is the current
 internal volume.
 
+The app has many more request templates (groups, presets, power, DSP and so
+on). They are listed with their query IDs, untested, in
+[PLAYFI_COMMANDS.md](PLAYFI_COMMANDS.md).
+
 ## What is and isn't used
 
 - The integration uses the UDP broadcast for now-playing and TCP/10113 for
