@@ -203,8 +203,11 @@ Cast and UPnP sessions on the speaker take priority over both.
   subscriptions.
   If one shows nothing, download the diagnostics while it plays (the `playfi`
   block shows what the speaker reports) and open an issue.
-- **Grouping and zones**, **input switching**, **presets** and **EQ** are
-  Play-Fi app features with no local API, so they are not supported.
+- **Grouping and zones** and **presets** are not supported yet. The speaker
+  has local Play-Fi commands for them, listed in
+  [docs/PLAYFI_COMMANDS.md](docs/PLAYFI_COMMANDS.md), but none has been tested.
+- **Input switching** and **EQ** are not supported. No local command for them
+  has been found.
 - **UPnP volume** on this firmware is a per-session DLNA value that the speaker
   may ignore. Volume and mute therefore go through Cast whenever it is
   connected.
